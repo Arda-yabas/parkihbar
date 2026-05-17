@@ -1,45 +1,52 @@
-/**
- * Sample React Native App
- * https://github.com/facebook/react-native
- *
- * @format
- */
+import React, {useEffect, useState} from 'react';
+import {View, ActivityIndicator} from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import BootSplash from 'react-native-bootsplash';
+import {AppNavigator} from './src/navigation/AppNavigator';
+import {ensureAnonymousAuth} from './src/services/firebase';
+import {ThemeProvider, useTheme} from './src/theme/ThemeContext';
 
-import { NewAppScreen } from '@react-native/new-app-screen';
-import { StatusBar, StyleSheet, useColorScheme, View } from 'react-native';
-import {
-  SafeAreaProvider,
-  useSafeAreaInsets,
-} from 'react-native-safe-area-context';
+const AppInner = () => {
+  const {colors} = useTheme();
+  const [loading, setLoading] = useState(true);
+  const [onboardingDone, setOnboardingDone] = useState(false);
 
-function App() {
-  const isDarkMode = useColorScheme() === 'dark';
+  useEffect(() => {
+    const minDelay = new Promise<void>(resolve => setTimeout(resolve, 2000));
+    Promise.all([
+      ensureAnonymousAuth().catch(() => {}),
+      AsyncStorage.getItem('@onboarding_completed').then(val => {
+        setOnboardingDone(val === 'true');
+      }),
+      minDelay,
+    ]).finally(() => {
+      setLoading(false);
+      BootSplash.hide({fade: true});
+    });
+  }, []);
+
+  if (loading) {
+    return (
+      <View style={{flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background}}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
 
   return (
-    <SafeAreaProvider>
-      <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
-      <AppContent />
-    </SafeAreaProvider>
+    <AppNavigator
+      onboardingDone={onboardingDone}
+      onOnboardingComplete={() => setOnboardingDone(true)}
+    />
   );
-}
+};
 
-function AppContent() {
-  const safeAreaInsets = useSafeAreaInsets();
-
+function App(): React.JSX.Element {
   return (
-    <View style={styles.container}>
-      <NewAppScreen
-        templateFileName="App.tsx"
-        safeAreaInsets={safeAreaInsets}
-      />
-    </View>
+    <ThemeProvider>
+      <AppInner />
+    </ThemeProvider>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-});
 
 export default App;
