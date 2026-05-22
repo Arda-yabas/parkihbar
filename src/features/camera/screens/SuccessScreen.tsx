@@ -52,11 +52,7 @@ export const SuccessScreen = () => {
         setTimeout(() => setShowLevelUp(true), 1000);
       }
 
-      const newBadges = await GamificationService.checkNewBadges(user.uid, {
-        totalReports: result?.totalReports || 0,
-        verifiedReports: result?.verifiedReports || 0,
-        streak: result?.streak || 0,
-      });
+      const newBadges = await GamificationService.checkNewBadges(user.uid);
 
       if (newBadges.length > 0) {
         setBadgeData(newBadges[0]);

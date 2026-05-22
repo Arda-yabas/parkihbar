@@ -1,10 +1,12 @@
 import React, {useState, useEffect, useRef, useMemo} from 'react';
-import {StyleSheet, View, Text, Image, TouchableOpacity, ScrollView, Dimensions, TextInput, KeyboardAvoidingView, Platform, Linking} from 'react-native';
+import {StyleSheet, View, Text, Image, TouchableOpacity, ScrollView, Dimensions, TextInput, KeyboardAvoidingView, Platform, Linking, Animated} from 'react-native';
 import {useNavigation, useRoute} from '@react-navigation/native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {useTheme, Colors} from '../../../theme/ThemeContext';
 import {FirestoreService, Comment, AuthService, firestore} from '../../../services/firebase';
+import {GamificationService} from '../../../services/gamification.service';
+import {BadgePopup} from '../../gamification/components/BadgePopup';
 import {getTemplate} from '../../../constants/reportTemplates';
 import {BackButton} from '../../../components/BackButton';
 
@@ -51,6 +53,10 @@ export const ReportDetailScreen = () => {
   const [commentText, setCommentText] = useState('');
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
+  const [toastMessage, setToastMessage] = useState('');
+  const toastAnim = useRef(new Animated.Value(0)).current;
+  const [badgePopupData, setBadgePopupData] = useState<any>(null);
+  const [showBadgePopup, setShowBadgePopup] = useState(false);
 
   useEffect(() => {
     if (!params?.report && params?.reportId) {
@@ -99,6 +105,18 @@ export const ReportDetailScreen = () => {
       const newComment = await FirestoreService.addComment(report.id, text, 'Sen');
       setComments(prev => [...prev, newComment]);
       setTimeout(() => scrollRef.current?.scrollToEnd({animated: true}), 100);
+      showToast('+2 puan · Yorumun topluma katkı sağladı 💬');
+      const currentUid = AuthService.getCurrentUser()?.uid;
+      if (currentUid) {
+        await FirestoreService.incrementUserCommentsCount(currentUid);
+        GamificationService.addPoints(currentUid, 2).catch(() => {});
+        GamificationService.checkNewBadges(currentUid).then(badges => {
+          if (badges.length > 0) {
+            setBadgePopupData(badges[0]);
+            setTimeout(() => setShowBadgePopup(true), 2200);
+          }
+        }).catch(() => {});
+      }
     } catch {
       setCommentText(text);
     } finally {
@@ -106,21 +124,41 @@ export const ReportDetailScreen = () => {
     }
   };
 
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    toastAnim.setValue(0);
+    Animated.sequence([
+      Animated.timing(toastAnim, {toValue: 1, duration: 250, useNativeDriver: true}),
+      Animated.delay(1800),
+      Animated.timing(toastAnim, {toValue: 0, duration: 300, useNativeDriver: true}),
+    ]).start(() => setToastMessage(''));
+  };
+
   const handleSeenIt = async () => {
     if (hasSeenIt || !report?.id) return;
     setHasSeenIt(true);
     AsyncStorage.setItem(`@seen_report_${report.id}`, 'true').catch(() => {});
     setSeenCount(c => c + 1);
+    showToast('+5 puan · Şehrine katkı sağladın 🌍');
     try {
       const {newCount, newStatus} = await FirestoreService.incrementSeenCount(report.id);
       setSeenCount(newCount);
       setStatus(newStatus);
-      // İhbar sahibine sosyal bildirim gönder (kendin değilsen)
       const currentUid = AuthService.getCurrentUser()?.uid;
       const reportOwnerUid = report.userId;
       if (reportOwnerUid && reportOwnerUid !== currentUid) {
         const viewerName = (await AsyncStorage.getItem('@username').catch(() => null)) || 'Biri';
         FirestoreService.notifySeenIt(report.id, reportOwnerUid, viewerName).catch(() => {});
+      }
+      if (currentUid) {
+        await FirestoreService.incrementUserSeenItCount(currentUid);
+        GamificationService.addPoints(currentUid, 5).catch(() => {});
+        GamificationService.checkNewBadges(currentUid).then(badges => {
+          if (badges.length > 0) {
+            setBadgePopupData(badges[0]);
+            setTimeout(() => setShowBadgePopup(true), 2200);
+          }
+        }).catch(() => {});
       }
     } catch {}
   };
@@ -274,6 +312,15 @@ export const ReportDetailScreen = () => {
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
+
+      {!!toastMessage && (
+        <Animated.View style={[styles.toast, {opacity: toastAnim}]}>
+          <Text style={styles.toastText}>{toastMessage}</Text>
+        </Animated.View>
+      )}
+      {badgePopupData && (
+        <BadgePopup visible={showBadgePopup} badge={badgePopupData} onClose={() => setShowBadgePopup(false)} />
+      )}
     </View>
   );
 };
@@ -349,6 +396,12 @@ const makeStyles = (colors: Colors) => StyleSheet.create({
   },
   sendButtonDisabled: {backgroundColor: colors.border},
   sendIcon: {fontSize: 18, color: '#FFFFFF'},
+  toast: {
+    position: 'absolute', bottom: 110, alignSelf: 'center',
+    backgroundColor: 'rgba(0,0,0,0.78)', borderRadius: 22,
+    paddingHorizontal: 20, paddingVertical: 11, zIndex: 100,
+  },
+  toastText: {color: '#FFFFFF', fontSize: 14, fontWeight: '600'},
   actions: {marginTop: 8},
   actionButton: {backgroundColor: colors.primary, borderRadius: 12, padding: 16, alignItems: 'center', marginBottom: 12},
   actionButtonActive: {backgroundColor: colors.card, borderWidth: 2, borderColor: colors.primary},

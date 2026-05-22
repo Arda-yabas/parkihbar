@@ -198,6 +198,12 @@ export const FirestoreService = {
         .set({verifiedReports: firestore.FieldValue.increment(1)}, {merge: true})
         .catch(() => {});
     }
+    // Her görülmede ihbar sahibinin toplam etki sayacını artır
+    if (reportUserId) {
+      firestore().collection('users').doc(reportUserId)
+        .set({totalSeenImpact: firestore.FieldValue.increment(1)}, {merge: true})
+        .catch(() => {});
+    }
     return {newCount, newStatus};
   },
 
@@ -391,5 +397,15 @@ export const FirestoreService = {
     await firestore()
       .doc(`donations/${causeId}`)
       .set({count: firestore.FieldValue.increment(1)}, {merge: true});
+  },
+
+  async incrementUserSeenItCount(userId: string): Promise<void> {
+    await firestore().collection('users').doc(userId)
+      .set({seenItCount: firestore.FieldValue.increment(1)}, {merge: true});
+  },
+
+  async incrementUserCommentsCount(userId: string): Promise<void> {
+    await firestore().collection('users').doc(userId)
+      .set({commentsCount: firestore.FieldValue.increment(1)}, {merge: true});
   },
 };

@@ -8,6 +8,7 @@ import {
   Alert,
   Linking,
   Animated,
+  Modal,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {useNavigation} from '@react-navigation/native';
@@ -47,30 +48,33 @@ interface Badge {
   id: string;
   name: string;
   icon: string;
-  type: 'reports' | 'verified' | 'streak' | 'accuracy';
+  description: string;
+  type: 'reports' | 'verified' | 'streak' | 'accuracy' | 'seenIt' | 'comments';
   requirement: number;
 }
 
 const BADGES: Badge[] = [
-  {id: 'first_step',    name: 'İlk Adım',      icon: '🎯', type: 'reports',  requirement: 1},
-  {id: 'lightning',     name: 'Şimşek',         icon: '⚡', type: 'reports',  requirement: 5},
-  {id: 'sharp_eye',     name: 'Keskin Göz',     icon: '📸', type: 'reports',  requirement: 10},
-  {id: 'fiery_mission', name: 'Ateşli Görev',   icon: '🔥', type: 'reports',  requirement: 50},
-  {id: 'hundred',       name: 'Yüz İhbar',      icon: '💯', type: 'reports',  requirement: 100},
-  {id: 'correct_eye',   name: 'Doğru Göz',      icon: '✅', type: 'verified', requirement: 10},
-  {id: 'eagle_eye',     name: 'Kartal Göz',     icon: '👁️', type: 'accuracy', requirement: 70},
-  {id: 'weekly_streak', name: 'Haftalık Seri',  icon: '📅', type: 'streak',   requirement: 7},
+  {id: 'first_step',     name: 'İlk Adım',           icon: '🎯', type: 'reports',  requirement: 1,   description: 'İlk ihbarını oluşturdun'},
+  {id: 'lightning',      name: 'Şimşek',              icon: '⚡', type: 'reports',  requirement: 5,   description: '5 ihbar oluşturdun'},
+  {id: 'sharp_eye',      name: 'Keskin Göz',          icon: '📸', type: 'reports',  requirement: 10,  description: '10 ihbar oluşturdun'},
+  {id: 'fiery_mission',  name: 'Ateşli Görev',        icon: '🔥', type: 'reports',  requirement: 50,  description: '50 ihbar oluşturdun'},
+  {id: 'hundred',        name: 'Yüz İhbar',           icon: '💯', type: 'reports',  requirement: 100, description: '100 ihbar oluşturdun'},
+  {id: 'correct_eye',    name: 'Doğru Göz',           icon: '✅', type: 'verified', requirement: 10,  description: '10 ihbarın topluluk tarafından doğrulandı'},
+  {id: 'eagle_eye',      name: 'Kartal Göz',          icon: '👁️', type: 'accuracy', requirement: 70,  description: '%70 doğruluk oranına ulaştın'},
+  {id: 'weekly_streak',  name: 'Haftalık Seri',       icon: '📅', type: 'streak',   requirement: 7,   description: '7 gün art arda ihbar gönderdin'},
+  {id: 'community_hero', name: 'Toplum Koruyucusu',   icon: '🤝', type: 'seenIt',   requirement: 10,  description: '10 ihbarı topluluk olarak onayladın'},
+  {id: 'commenter',      name: 'Yorumcu',             icon: '💬', type: 'comments', requirement: 1,   description: 'İlk yorumunu yazdın'},
 ];
 
-const BadgeCard = ({badge, earned, colors, styles}: {badge: Badge; earned: boolean; colors: Colors; styles: any}) => (
-  <View style={[styles.badgeCard, !earned && styles.badgeCardLocked]}>
+const BadgeCard = ({badge, earned, colors, styles, onPress}: {badge: Badge; earned: boolean; colors: Colors; styles: any; onPress: () => void}) => (
+  <TouchableOpacity style={[styles.badgeCard, !earned && styles.badgeCardLocked]} onPress={onPress} activeOpacity={0.75}>
     <View style={styles.badgeIconWrap}>
       <Text style={styles.badgeIcon}>{badge.icon}</Text>
     </View>
     <Text style={[styles.badgeName, !earned && styles.badgeNameLocked]} numberOfLines={2}>
       {badge.name}
     </Text>
-  </View>
+  </TouchableOpacity>
 );
 
 export const ProfileScreen = () => {
@@ -84,6 +88,7 @@ export const ProfileScreen = () => {
   const [localAvatar, setLocalAvatar] = useState('👤');
   const [loading, setLoading] = useState(true);
   const [badgesExpanded, setBadgesExpanded] = useState(false);
+  const [selectedBadge, setSelectedBadge] = useState<Badge | null>(null);
   const tooltipOpacity = useRef(new Animated.Value(0)).current;
   const [myReports, setMyReports] = useState<{id: string; type: string; icon: string; time: string; status: string}[]>([]);
 
@@ -158,18 +163,35 @@ export const ProfileScreen = () => {
       : ((points - currentLevelPoints) / (nextLevelPoints - currentLevelPoints)) * 100;
   const pointsToNext = level < 6 ? nextLevelPoints - points : 0;
 
+  const seenItCount   = userData?.seenItCount   || 0;
+  const commentsCount = userData?.commentsCount || 0;
+
   const earnedBadgeIds = new Set(
     BADGES.filter(b => {
       switch (b.type) {
-        case 'reports':  return totalReports >= b.requirement;
+        case 'reports':  return totalReports    >= b.requirement;
         case 'verified': return verifiedReports >= b.requirement;
-        case 'streak':   return streak >= b.requirement;
-        case 'accuracy': return accuracy >= b.requirement;
+        case 'streak':   return streak          >= b.requirement;
+        case 'accuracy': return accuracy        >= b.requirement;
+        case 'seenIt':   return seenItCount     >= b.requirement;
+        case 'comments': return commentsCount   >= b.requirement;
       }
     }).map(b => b.id),
   );
 
+  const getBadgeProgress = (badge: Badge): string => {
+    switch (badge.type) {
+      case 'reports':  return `${totalReports} / ${badge.requirement} ihbar`;
+      case 'verified': return `${verifiedReports} / ${badge.requirement} onaylı ihbar`;
+      case 'streak':   return `${streak} / ${badge.requirement} gün seri`;
+      case 'accuracy': return `%${accuracy} / %${badge.requirement} doğruluk`;
+      case 'seenIt':   return `${seenItCount} / ${badge.requirement} onay`;
+      case 'comments': return `${commentsCount} / ${badge.requirement} yorum`;
+    }
+  };
+
   return (
+    <>
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       {/* Header */}
       <View style={styles.header}>
@@ -235,6 +257,23 @@ export const ProfileScreen = () => {
         </View>
       )}
 
+      {/* Etki Özeti */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>🌍 Etkin Etkisi</Text>
+        <View style={styles.impactRow}>
+          <Text style={styles.impactNum}>{userData?.totalSeenImpact || 0}</Text>
+          <Text style={styles.impactText}> kişi ihbarlarını gördü — farkındalık yarattın</Text>
+        </View>
+        <View style={styles.impactRow}>
+          <Text style={styles.impactNum}>{verifiedReports}</Text>
+          <Text style={styles.impactText}> ihbarın topluluk tarafından doğrulandı</Text>
+        </View>
+        <View style={styles.impactRow}>
+          <Text style={styles.impactNum}>{totalReports}</Text>
+          <Text style={styles.impactText}> ihbarla şehrini değiştiriyorsun</Text>
+        </View>
+      </View>
+
       {/* Badges */}
       <View style={styles.section}>
         <View style={styles.badgesTitleRow}>
@@ -257,6 +296,7 @@ export const ProfileScreen = () => {
               earned={earnedBadgeIds.has(badge.id)}
               colors={colors}
               styles={styles}
+              onPress={() => setSelectedBadge(badge)}
             />
           ))}
         </View>
@@ -321,6 +361,27 @@ export const ProfileScreen = () => {
         </View>
       </View>
     </ScrollView>
+
+    <Modal visible={!!selectedBadge} transparent animationType="fade" onRequestClose={() => setSelectedBadge(null)}>
+      <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setSelectedBadge(null)}>
+        <View style={styles.modalCard}>
+          <Text style={styles.modalBadgeIcon}>{selectedBadge?.icon}</Text>
+          <Text style={styles.modalBadgeName}>{selectedBadge?.name}</Text>
+          <Text style={styles.modalBadgeDesc}>{selectedBadge?.description}</Text>
+          {selectedBadge && earnedBadgeIds.has(selectedBadge.id) ? (
+            <View style={styles.modalEarned}>
+              <Text style={styles.modalEarnedText}>✅ Kazanıldı!</Text>
+            </View>
+          ) : (
+            <View style={styles.modalProgress}>
+              <Text style={styles.modalProgressLabel}>İlerleme</Text>
+              <Text style={styles.modalProgressText}>{selectedBadge ? getBadgeProgress(selectedBadge) : ''}</Text>
+            </View>
+          )}
+        </View>
+      </TouchableOpacity>
+    </Modal>
+    </>
   );
 };
 
@@ -433,4 +494,21 @@ const makeStyles = (colors: Colors) => StyleSheet.create({
   emergencyCallIcon: {position: 'absolute', left: 10, top: '50%', fontSize: 15},
   emergencyNumber: {fontSize: 20, fontWeight: '800', color: colors.text, textAlign: 'center', marginBottom: 3},
   emergencyLabel: {fontSize: 11, fontWeight: '500', color: colors.textSecondary, textAlign: 'center'},
+  impactRow: {flexDirection: 'row', alignItems: 'baseline', marginBottom: 10},
+  impactNum: {fontSize: 22, fontWeight: '800', color: colors.primary},
+  impactText: {fontSize: 14, color: colors.textSecondary, flex: 1, flexWrap: 'wrap'},
+  modalOverlay: {flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center'},
+  modalCard: {
+    width: '78%', backgroundColor: colors.card,
+    borderRadius: 20, padding: 28, alignItems: 'center',
+    shadowColor: '#000', shadowOffset: {width: 0, height: 8}, shadowOpacity: 0.2, shadowRadius: 20, elevation: 12,
+  },
+  modalBadgeIcon: {fontSize: 48, marginBottom: 12},
+  modalBadgeName: {fontSize: 20, fontWeight: '800', color: colors.text, marginBottom: 8, textAlign: 'center'},
+  modalBadgeDesc: {fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 20, marginBottom: 16},
+  modalEarned: {backgroundColor: '#D4EDDA', borderRadius: 10, paddingHorizontal: 16, paddingVertical: 8},
+  modalEarnedText: {fontSize: 14, fontWeight: '700', color: '#155724'},
+  modalProgress: {backgroundColor: colors.background, borderRadius: 10, paddingHorizontal: 16, paddingVertical: 10, alignItems: 'center'},
+  modalProgressLabel: {fontSize: 11, fontWeight: '600', color: colors.textSecondary, marginBottom: 4, letterSpacing: 0.5},
+  modalProgressText: {fontSize: 15, fontWeight: '700', color: colors.primary},
 });

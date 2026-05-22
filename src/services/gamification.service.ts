@@ -18,7 +18,7 @@ interface Badge {
   icon: string;
   description: string;
   requirement: number;
-  type: 'reports' | 'verified' | 'streak' | 'accuracy';
+  type: 'reports' | 'verified' | 'streak' | 'accuracy' | 'seenIt' | 'comments';
 }
 
 const BADGES: Badge[] = [
@@ -28,8 +28,10 @@ const BADGES: Badge[] = [
   {id: 'fiery_mission', name: 'Ateşli Görev',  icon: '🔥', description: '50 ihbar oluşturdunuz',          requirement: 50,  type: 'reports'},
   {id: 'hundred',       name: 'Yüz İhbar',     icon: '💯', description: '100 ihbar oluşturdunuz',         requirement: 100, type: 'reports'},
   {id: 'correct_eye',   name: 'Doğru Göz',     icon: '✅', description: '10 onaylı ihbar oluşturdunuz',   requirement: 10,  type: 'verified'},
-  {id: 'eagle_eye',     name: 'Kartal Göz',    icon: '👁️', description: '%70 doğruluk oranına ulaştınız', requirement: 70,  type: 'accuracy'},
-  {id: 'weekly_streak', name: 'Haftalık Seri', icon: '📅', description: '7 hafta art arda ihbar gönderdiniz', requirement: 7, type: 'streak'},
+  {id: 'eagle_eye',      name: 'Kartal Göz',        icon: '👁️', description: '%70 doğruluk oranına ulaştınız',      requirement: 70, type: 'accuracy'},
+  {id: 'weekly_streak',  name: 'Haftalık Seri',     icon: '📅', description: '7 gün art arda ihbar gönderdiniz',    requirement: 7,  type: 'streak'},
+  {id: 'community_hero', name: 'Toplum Koruyucusu', icon: '🤝', description: '10 ihbarı topluluk olarak onayladın', requirement: 10, type: 'seenIt'},
+  {id: 'commenter',      name: 'Yorumcu',           icon: '💬', description: 'İlk yorumunu yazdın',                requirement: 1,  type: 'comments'},
 ];
 
 const sameDay = (a: Date, b: Date) =>
@@ -123,25 +125,31 @@ export class GamificationService {
     return returnVal;
   }
 
-  // Tüm yeni badge'leri tek bir update'e topla — N+1 write yok
-  static async checkNewBadges(
-    userId: string,
-    stats: {totalReports: number; verifiedReports: number; streak: number},
-  ): Promise<Badge[]> {
+  // Tüm yeni badge'leri tek bir update'e topla — Firestore'dan okur, N+1 write yok
+  static async checkNewBadges(userId: string): Promise<Badge[]> {
     const userDoc = await firestore().collection('users').doc(userId).get();
-    const earnedBadges: string[] = userDoc.data()?.badges || [];
+    const data = userDoc.data() ?? {};
+    const earnedBadges: string[] = data.badges || [];
     const newBadges: Badge[] = [];
-    const accuracy = stats.totalReports > 0
-      ? Math.round((stats.verifiedReports / stats.totalReports) * 100)
-      : 0;
+
+    const totalReports   = data.totalReports   || 0;
+    const verifiedReports = data.verifiedReports || 0;
+    const streak         = data.streak         || 0;
+    const seenItCount    = data.seenItCount    || 0;
+    const commentsCount  = data.commentsCount  || 0;
+    const accuracy = totalReports > 0 ? Math.round((verifiedReports / totalReports) * 100) : 0;
 
     for (const badge of BADGES) {
       if (earnedBadges.includes(badge.id)) continue;
-      const earned =
-        badge.type === 'reports'  ? stats.totalReports >= badge.requirement :
-        badge.type === 'verified' ? stats.verifiedReports >= badge.requirement :
-        badge.type === 'accuracy' ? accuracy >= badge.requirement :
-        stats.streak >= badge.requirement;
+      let earned = false;
+      switch (badge.type) {
+        case 'reports':  earned = totalReports    >= badge.requirement; break;
+        case 'verified': earned = verifiedReports >= badge.requirement; break;
+        case 'accuracy': earned = accuracy        >= badge.requirement; break;
+        case 'streak':   earned = streak          >= badge.requirement; break;
+        case 'seenIt':   earned = seenItCount     >= badge.requirement; break;
+        case 'comments': earned = commentsCount   >= badge.requirement; break;
+      }
       if (earned) newBadges.push(badge);
     }
 
