@@ -4,7 +4,7 @@ import {useNavigation, useRoute, RouteProp} from '@react-navigation/native';
 import {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {CameraStackParamList} from '../../../navigation/AppNavigator';
-import {lightColors as colors} from '../../../theme/ThemeContext';
+import {useTheme, Colors} from '../../../theme/ThemeContext';
 import {FirestoreService, StorageService} from '../../../services/firebase';
 import {LocationService, LocationData} from '../../../services/location.service';
 import {CATEGORY_OPTIONS} from '../../../constants/reportTemplates';
@@ -18,6 +18,8 @@ export const FormScreen = () => {
   const navigation = useNavigation<FormScreenNavigationProp>();
   const route = useRoute<FormScreenRouteProp>();
   const insets = useSafeAreaInsets();
+  const {colors} = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const {photoUris} = route.params;
 
   const [selectedType, setSelectedType] = useState<string | null>(null);
@@ -36,6 +38,14 @@ export const FormScreen = () => {
   const handleSubmit = async () => {
     if (!selectedType) {
       Alert.alert('Eksik Bilgi', 'Lütfen ihlal tipini seçin');
+      return;
+    }
+    if (!locationData) {
+      Alert.alert(
+        'Konum Alınamadı',
+        'İhbar için konum gerekli. Lütfen konum iznini ayarlardan açın ve tekrar deneyin.',
+        [{text: 'Ayarları Aç', onPress: () => Linking.openSettings()}, {text: 'İptal', style: 'cancel'}],
+      );
       return;
     }
 
@@ -67,10 +77,10 @@ export const FormScreen = () => {
         latitude:      locationData?.latitude      ?? 41.0082,
         longitude:     locationData?.longitude     ?? 28.9784,
         address:       locationData?.address       ?? 'Konum alınamadı',
-        district:      locationData?.district      ?? null,
-        city:          locationData?.city          ?? null,
-        neighbourhood: locationData?.neighbourhood ?? null,
-        road:          locationData?.road          ?? null,
+        district:      locationData?.district      ?? undefined,
+        city:          locationData?.city          ?? undefined,
+        neighbourhood: locationData?.neighbourhood ?? undefined,
+        road:          locationData?.road          ?? undefined,
       };
 
       const reportId = await FirestoreService.createReport({
@@ -89,6 +99,7 @@ export const FormScreen = () => {
         type: selectedType,
         location,
         note: note || undefined,
+        points: 15,
       });
     } catch (error: any) {
       const msg = error?.message ?? error?.code ?? JSON.stringify(error) ?? 'Bilinmeyen hata';
@@ -195,7 +206,7 @@ export const FormScreen = () => {
         ) : (
           <>
             <Text style={styles.submitHint}>
-              ℹ️  Bir sonraki adımda sosyal medyada paylaşabilir veya yetkililere iletebilirsiniz
+              Onaylanırsa ihbarın <Text style={styles.submitHintBold}>@parkihbar</Text> X hesabında otomatik paylaşılacak · Yüzler bulanıklaştırılır
             </Text>
             <TouchableOpacity
               style={[styles.submitButton, !selectedType && styles.submitButtonDisabled]}
@@ -210,7 +221,7 @@ export const FormScreen = () => {
   );
 };
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Colors) => StyleSheet.create({
   container: {flex: 1, backgroundColor: colors.background},
   formHeader: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
@@ -270,6 +281,7 @@ const styles = StyleSheet.create({
   submitButtonDisabled: {backgroundColor: colors.border},
   submitButtonText: {color: colors.background, fontSize: 18, fontWeight: '600'},
   submitHint: {fontSize: 12, color: colors.textSecondary, textAlign: 'center', marginBottom: 10, lineHeight: 17},
+  submitHintBold: {fontWeight: '700', color: colors.text},
   progressContainer: {backgroundColor: colors.card, borderRadius: 12, padding: 20, alignItems: 'center'},
   progressStep: {fontSize: 15, fontWeight: '600', color: colors.text, marginBottom: 12},
   progressTrack: {

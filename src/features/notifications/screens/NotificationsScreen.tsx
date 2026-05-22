@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import {useNavigation, useFocusEffect} from '@react-navigation/native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
-import {AuthService, FirestoreService} from '../../../services/firebase';
+import {AuthService, FirestoreService, firestore} from '../../../services/firebase';
 import {useTheme, Colors} from '../../../theme/ThemeContext';
 import {BackButton} from '../../../components/BackButton';
 
@@ -60,22 +60,32 @@ export const NotificationsScreen = () => {
 
   useFocusEffect(
     useCallback(() => {
-      loadNotifications();
+      const user = AuthService.getCurrentUser();
+      if (!user) { setLoading(false); return; }
+
+      setLoading(true);
+      const unsub = firestore()
+        .collection('notifications')
+        .where('userId', '==', user.uid)
+        .limit(50)
+        .onSnapshot(
+          snap => {
+            const sorted = snap.docs
+              .map(doc => ({id: doc.id, ...doc.data()} as Notification))
+              .sort((a: any, b: any) => {
+                const aMs = a.createdAt?.toMillis?.() ?? 0;
+                const bMs = b.createdAt?.toMillis?.() ?? 0;
+                return bMs - aMs;
+              });
+            setNotifications(sorted);
+            setLoading(false);
+          },
+          () => setLoading(false),
+        );
+
+      return () => unsub();
     }, []),
   );
-
-  const loadNotifications = async () => {
-    setLoading(true);
-    try {
-      const user = AuthService.getCurrentUser();
-      if (!user) return;
-      const data = await FirestoreService.getNotifications(user.uid, 50);
-      setNotifications(data as Notification[]);
-    } catch {
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const unreadCount = notifications.filter(n => !n.read).length;
 

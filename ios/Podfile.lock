@@ -2855,6 +2855,8 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
+  - react-native-image-resizer (1.4.5):
+    - React-Core
   - react-native-safe-area-context (5.7.0):
     - hermes-engine
     - RCTRequired
@@ -3705,6 +3707,7 @@ DEPENDENCIES:
   - "react-native-blur (from `../node_modules/@react-native-community/blur`)"
   - "react-native-cameraroll (from `../node_modules/@react-native-camera-roll/camera-roll`)"
   - "react-native-geolocation (from `../node_modules/@react-native-community/geolocation`)"
+  - react-native-image-resizer (from `../node_modules/react-native-image-resizer`)
   - react-native-safe-area-context (from `../node_modules/react-native-safe-area-context`)
   - react-native-view-shot (from `../node_modules/react-native-view-shot`)
   - react-native-webview (from `../node_modules/react-native-webview`)
@@ -3870,6 +3873,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/@react-native-camera-roll/camera-roll"
   react-native-geolocation:
     :path: "../node_modules/@react-native-community/geolocation"
+  react-native-image-resizer:
+    :path: "../node_modules/react-native-image-resizer"
   react-native-safe-area-context:
     :path: "../node_modules/react-native-safe-area-context"
   react-native-view-shot:
@@ -4038,6 +4043,7 @@ SPEC CHECKSUMS:
   react-native-blur: 2c15b7e68450a2aa01a064f99d6045b86ee42fe0
   react-native-cameraroll: d7e55dae97acb52c4ce88a32deb02841fa15de12
   react-native-geolocation: aba0b4dbf0f9a84c328059efd93af22e9e6190d7
+  react-native-image-resizer: 17b2d73c030975b6543395c7e7368bc8774c5efa
   react-native-safe-area-context: ba7283e541a5f57c6b27a7e33f2c40b8977888c0
   react-native-view-shot: 6da2aaa0404b8d617ab1689550acdb251d759af9
   react-native-webview: 2a4da2e03d3ec2c731c4d1a389cb86aaa4902167

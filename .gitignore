@@ -79,6 +79,9 @@ yarn-error.log
 .env.*
 functions/.env
 
+# Android keystore secrets
+android/keystore.properties
+
 # Firebase secrets
 google-services.json
 GoogleService-Info.plist

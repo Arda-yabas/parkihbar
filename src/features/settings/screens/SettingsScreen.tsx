@@ -10,6 +10,7 @@ import {
   Platform,
   StyleSheet,
   StatusBar,
+  TextInput,
 } from 'react-native';
 import {useNavigation, useFocusEffect} from '@react-navigation/native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
@@ -42,6 +43,8 @@ export const SettingsScreen = () => {
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const [userName, setUserName] = useState('');
+  const [nameInput, setNameInput] = useState('');
+  const [editingName, setEditingName] = useState(false);
   const [avatar, setAvatar] = useState('😎');
   const [isAnonymous, setIsAnonymous] = useState(false);
   const [isProfilePublic, setIsProfilePublic] = useState(true);
@@ -62,10 +65,24 @@ export const SettingsScreen = () => {
     const pairs = await AsyncStorage.multiGet([
       '@username', '@avatar', '@anonymous', '@profile_public',
     ]);
-    if (pairs[0][1]) setUserName(pairs[0][1]);
+    const name = pairs[0][1] || '';
+    if (name) { setUserName(name); setNameInput(name); }
     if (pairs[1][1]) setAvatar(pairs[1][1]);
     setIsAnonymous(pairs[2][1] === 'true');
     setIsProfilePublic(pairs[3][1] !== 'false');
+  };
+
+  const saveUserName = async () => {
+    const trimmed = nameInput.trim();
+    if (!trimmed) return;
+    setUserName(trimmed);
+    setEditingName(false);
+    await AsyncStorage.setItem('@username', trimmed).catch(() => {});
+    const uid = getUserId();
+    if (uid) {
+      await firestore().collection('users').doc(uid)
+        .set({displayName: trimmed}, {merge: true}).catch(() => {});
+    }
   };
 
   const checkPerms = async () => {
@@ -223,7 +240,30 @@ export const SettingsScreen = () => {
         <View style={styles.card}>
           <Row icon="😀" label="Avatar" value={avatar} onPress={() => navigation.navigate('Profile' as never)} styles={styles} />
           <Divider styles={styles} />
-          <Row icon="✏️" label="İsim" value={userName || '—'} onPress={() => navigation.navigate('Profile' as never)} styles={styles} />
+          {editingName ? (
+            <View style={styles.nameEditRow}>
+              <Text style={styles.rowIcon}>✏️</Text>
+              <TextInput
+                style={styles.nameInput}
+                value={nameInput}
+                onChangeText={setNameInput}
+                autoFocus
+                maxLength={30}
+                returnKeyType="done"
+                onSubmitEditing={saveUserName}
+                placeholder="Kullanıcı adı..."
+                placeholderTextColor={colors.textSecondary}
+              />
+              <TouchableOpacity style={styles.nameCancel} onPress={() => setEditingName(false)}>
+                <Text style={styles.nameCancelText}>İptal</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.nameSave} onPress={saveUserName}>
+                <Text style={styles.nameSaveText}>Kaydet</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <Row icon="✏️" label="İsim" value={userName || '—'} onPress={() => { setNameInput(userName); setEditingName(true); }} styles={styles} />
+          )}
         </View>
 
         {/* Görünüm */}
@@ -304,10 +344,10 @@ export const SettingsScreen = () => {
             onPress={() => Linking.openURL('mailto:info@parkihbar.com')} styles={styles} />
           <Divider styles={styles} />
           <TouchableRow icon="🔐" label="Gizlilik Politikası" onPress={() =>
-            Alert.alert('Gizlilik Politikası', 'Verileriniz yalnızca ihbar süreçleri için kullanılır. Üçüncü taraflarla paylaşılmaz.')} styles={styles} />
+            (navigation as any).navigate('Policy', {type: 'privacy'})} styles={styles} />
           <Divider styles={styles} />
           <TouchableRow icon="📄" label="Kullanım Şartları" onPress={() =>
-            Alert.alert('Kullanım Şartları', 'parkihbar uygulamasını kullanarak kullanım şartlarını kabul etmiş sayılırsınız.')} styles={styles} />
+            (navigation as any).navigate('Policy', {type: 'terms'})} styles={styles} />
         </View>
 
         {/* Hesap */}
@@ -430,4 +470,20 @@ const makeStyles = (colors: Colors) =>
     permBtnGranted: {backgroundColor: colors.primary, borderColor: colors.primary},
     permBtnText: {fontSize: 12, fontWeight: '700', color: colors.primary},
     permBtnTextGranted: {color: '#FFFFFF'},
+    nameEditRow: {
+      flexDirection: 'row', alignItems: 'center',
+      paddingHorizontal: 16, paddingVertical: 10, minHeight: 54,
+    },
+    nameInput: {
+      flex: 1, height: 36, backgroundColor: colors.background,
+      borderRadius: 8, paddingHorizontal: 10, fontSize: 15,
+      color: colors.text, marginRight: 8,
+    },
+    nameCancel: {paddingHorizontal: 10, paddingVertical: 6},
+    nameCancelText: {fontSize: 13, color: colors.textSecondary},
+    nameSave: {
+      paddingHorizontal: 12, paddingVertical: 6,
+      backgroundColor: colors.primary, borderRadius: 8,
+    },
+    nameSaveText: {fontSize: 13, fontWeight: '700', color: '#FFFFFF'},
   });

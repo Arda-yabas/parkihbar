@@ -140,11 +140,18 @@ export const FeedScreen = () => {
           .filter(r => distanceTo(r) < 10)
           .sort((a, b) => distanceTo(a) - distanceTo(b));
       } else if (filterType === 'city') {
-        const userCity = userLocation.city.toLowerCase().trim();
-        const cityMatches = data.filter(
-          r => r.location.city?.toLowerCase().trim() === userCity,
-        );
-        result = (cityMatches.length > 0 ? cityMatches : data).sort((a, b) => {
+        const normalize = (s: string) =>
+          s.toLocaleLowerCase('tr').trim()
+           .replace(/\s*(il özel idaresi|büyükşehir belediyesi|belediyesi|ili)\s*$/i, '')
+           .trim();
+        const userCity = normalize(userLocation.city);
+        const cityMatches = data.filter(r => {
+          const rc = r.location.city;
+          if (!rc) return false;
+          const norm = normalize(rc);
+          return norm === userCity || norm.includes(userCity) || userCity.includes(norm);
+        });
+        result = cityMatches.sort((a, b) => {
           const aMs = a.createdAt?.toMillis?.() ?? 0;
           const bMs = b.createdAt?.toMillis?.() ?? 0;
           return bMs - aMs;
@@ -160,19 +167,15 @@ export const FeedScreen = () => {
     [userLocation, distanceTo],
   );
 
-  const loadReports = useCallback(async () => {
-    try {
-      const data = await FirestoreService.getNearbyReports(50);
+  useEffect(() => {
+    const unsub = FirestoreService.listenReports(100, data => {
       setReports(data);
-      applyFilter(data, filter);
-    } catch {}
-    finally {
       setLoading(false);
       setRefreshing(false);
-    }
-  }, [applyFilter, filter]);
+    });
+    return () => unsub();
+  }, []);
 
-  useEffect(() => { loadReports(); }, [loadReports]);
   useEffect(() => { applyFilter(reports, filter); }, [userLocation, reports, filter, applyFilter]);
 
   const onFilterChange = (newFilter: FilterType) => {
@@ -183,8 +186,8 @@ export const FeedScreen = () => {
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    loadReports();
-  }, [loadReports]);
+    setTimeout(() => setRefreshing(false), 600);
+  }, []);
 
   const openNearbyOnMaps = () => {
     if (!userLocation) return;
@@ -288,7 +291,7 @@ export const FeedScreen = () => {
               {filter === 'nearby'
                 ? '10 km çevrenizde henüz ihbar yok'
                 : filter === 'city'
-                ? 'Şehrinizde henüz ihbar yok'
+                ? `${userLocation?.city ?? 'Şehriniz'}de henüz ihbar yok.\nTümünü görmek için "🇹🇷 Tümü" sekmesine geçin.`
                 : 'Henüz hiç ihbar yapılmamış'}
             </Text>
           </View>

@@ -53,19 +53,20 @@ export class LocationService {
   ): Promise<Omit<LocationData, 'latitude' | 'longitude'>> {
     try {
       const response = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&accept-language=tr`,
-        {headers: {'User-Agent': 'parkihbar-app'}},
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&accept-language=tr&zoom=18&addressdetails=1`,
+        {headers: {'User-Agent': 'parkihbar-app/1.0'}},
       );
-      const data = await response.json() as {address?: Record<string, string>};
+      const data = await response.json() as {address?: Record<string, string>; display_name?: string};
       if (data.address) {
         const a = data.address;
-        // Nominatim Türkiye için: province = İl, town = İlçe, suburb = Mahalle, road = Cadde
-        const city         = a.province || a.state || a.city || 'Bilinmeyen Şehir';
-        const district     = a.town || a.county || a.city_district || a.district || city;
-        const neighbourhood = a.suburb || a.quarter || a.neighbourhood || a.village || undefined;
-        // Nominatim yol adını farklı alanlarda döndürebilir
-        const road = a.road || a.residential || a.service || a.footway
-                  || a.pedestrian || a.cycleway || a.path || a.street || undefined;
+        const city          = a.province || a.state || a.city || 'Bilinmeyen Şehir';
+        const district      = a.town || a.city_district || a.county || a.district || city;
+        const neighbourhood = a.suburb || a.quarter || a.neighbourhood
+                           || a.village || a.hamlet || a.municipality || undefined;
+        const road          = a.road || a.highway || a.pedestrian || a.footway
+                           || a.residential || a.living_street || a.service
+                           || a.unclassified || a.cycleway || a.path
+                           || a.street || a.track || undefined;
 
         const parts: string[] = [];
         if (road)          parts.push(road);
@@ -73,8 +74,19 @@ export class LocationService {
         if (district && district !== city) parts.push(district);
         if (city)          parts.push(city);
 
+        // display_name'den Türkiye ve posta kodunu çıkarıp kullan (road yoksa)
+        let address = parts.join(', ');
+        if (!road && data.display_name) {
+          address = data.display_name
+            .split(',')
+            .map(s => s.trim())
+            .filter(s => !/^\d{5}$/.test(s) && s !== 'Türkiye' && s !== 'Turkey')
+            .slice(0, 4)
+            .join(', ');
+        }
+
         return {
-          address: parts.join(', ') || 'Adres bulunamadı',
+          address: address || 'Adres bulunamadı',
           city,
           district,
           neighbourhood,

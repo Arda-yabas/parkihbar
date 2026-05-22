@@ -1,4 +1,4 @@
-import React, {useRef, useState, useMemo} from 'react';
+import React, {useRef, useState, useMemo, useEffect} from 'react';
 import {
   View, Text, StyleSheet, ActivityIndicator,
   TouchableOpacity, Platform, Alert,
@@ -9,14 +9,138 @@ import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useTheme, Colors} from '../../../theme/ThemeContext';
 import {generateMessage, ShareInfo} from '../../../utils/messageGenerator';
 
+// ── EGM API ──────────────────────────────────────────────────────────────────
+const EGM_BASE  = 'https://ihbar.ng112.gov.tr/api';
+const EGM_CSRF  = 'fb8484f40e6dfc6a9d674b870a4a369dca696321a2be2e8e4f3f9bc241ef97bb';
+const EGM_UA    = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
+
+interface EGMItem { id: number; label: string; }
+
+interface EGMLocation {
+  token: string;
+  city:         string;
+  district:     string;
+  neighbourhood: string;
+  road:         string;
+}
+
+const egmHeaders = (token: string): Record<string, string> => ({
+  Authorization:    `Bearer ${token}`,
+  Accept:           'application/json',
+  'User-Agent':     EGM_UA,
+  Referer:          'https://ihbar.ng112.gov.tr/',
+  'X-CSRF-Token':   EGM_CSRF,
+});
+
+/* EGM suffix normalization — strip "MAH.", "SK.", "CD.", "CAD.", "BLV." etc. */
+const normEGM = (s: string): string => {
+  let t = s.toLocaleLowerCase('tr-TR').trim();
+  const suffixes = [
+    'mahallesi','mahalle','mah\\.','mah',
+    'caddesi','cadde','cad\\.','cad','cd\\.','cd',
+    'sokağı','sokak','sok\\.','sok','sk\\.','sk',
+    'bulvarı','bulvar','blv\\.','blv','bul\\.','bul',
+    'çıkmazı','çıkmaz','çk\\.','çk',
+    'yolu','yol','köyü','köy','sitesi','sit\\.','sit',
+  ];
+  for (const w of suffixes) {
+    t = t.replace(new RegExp(`(^|\\s)${w}(\\s|$)`, 'g'), ' ');
+  }
+  /* Boşlukları sıkıştır, tire/nokta DOKUNMA */
+  return t.replace(/\s+/g, ' ').trim();
+};
+
+/* "Cafer Ağa" ↔ "CAFERAĞA" gibi boşluk farkını da handle et */
+const squeezed = (s: string) => s.replace(/\s+/g, '');
+
+const findBestMatch = (items: EGMItem[], search: string): EGMItem | null => {
+  if (!search || !items.length) return null;
+  const ns = normEGM(search);
+  const nsq = squeezed(ns);
+
+  for (const item of items) {
+    const ne  = normEGM(item.label);
+    const neq = squeezed(ne);
+    if (!ne) continue;
+    if (ne === ns || neq === nsq) return item;
+    const shorter = ne.length <= ns.length ? ne : ns;
+    const longer  = ne.length <= ns.length ? ns : ne;
+    if (shorter.length >= 3 && longer.includes(shorter)) return item;
+    /* boşluk-sıkıştırılmış substring */
+    const shq = neq.length <= nsq.length ? neq : nsq;
+    const loq = neq.length <= nsq.length ? nsq : neq;
+    if (shq.length >= 3 && loq.includes(shq)) return item;
+  }
+  return null;
+};
+
+const egmFetch = async (url: string, token: string) => {
+  const res = await fetch(url, {headers: egmHeaders(token)});
+  const json = await res.json() as {result: EGMItem[]; success: boolean};
+  if (!json.success || !json.result) throw new Error(`EGM fetch failed: ${url}`);
+  return json.result;
+};
+
+const resolveEGMLocation = async (info: ShareInfo): Promise<EGMLocation | null> => {
+  try {
+    /* 1. IP al */
+    const ipRes  = await fetch('https://api.ipify.org?format=json');
+    const {ip}   = await ipRes.json() as {ip: string};
+    const encoded = btoa(ip).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+    /* 2. EGM token al */
+    const tokenRes  = await fetch(`${EGM_BASE}/login?localData=${encoded}`, {
+      headers: {'Accept': 'application/json', 'User-Agent': EGM_UA, Referer: 'https://ihbar.ng112.gov.tr/'},
+    });
+    const tokenJson = await tokenRes.json() as {result?: {token: string}; success: boolean};
+    const token     = tokenJson.result?.token;
+    if (!token) return null;
+
+    /* 3. Şehir */
+    const cities  = await egmFetch(`${EGM_BASE}/location/get-city`, token);
+    const city    = findBestMatch(cities, info.location.city ?? '');
+    if (!city) { console.log('[EGM] şehir bulunamadı:', info.location.city); return null; }
+
+    /* 4. İlçe */
+    const districts = await egmFetch(`${EGM_BASE}/location/get-district?cityId=${city.id}`, token);
+    const district  = findBestMatch(districts, info.location.district ?? '');
+    if (!district) { console.log('[EGM] ilçe bulunamadı:', info.location.district); return null; }
+
+    /* 5. Mahalle */
+    const hoods = await egmFetch(`${EGM_BASE}/location/get-neighborhood?districtId=${district.id}`, token);
+    const hood  = findBestMatch(hoods, info.location.neighbourhood ?? '');
+
+    /* 6. Cadde/Sokak */
+    let street: EGMItem | null = null;
+    if (hood && info.location.road) {
+      const streets = await egmFetch(`${EGM_BASE}/location/get-street?neighborhoodId=${hood.id}`, token);
+      street = findBestMatch(streets, info.location.road);
+    }
+
+    console.log('[EGM] çözüldü →', city.label, '/', district.label, '/', hood?.label, '/', street?.label);
+
+    return {
+      token,
+      city:          city.label,
+      district:      district.label,
+      neighbourhood: hood?.label    ?? '',
+      road:          street?.label  ?? '',
+    };
+  } catch (e) {
+    console.log('[EGM] ön-çözüm hatası:', e);
+    return null;
+  }
+};
+
 const EGM_URL = 'https://ihbar.ng112.gov.tr/';
 
-const buildFillScript = (info: ShareInfo): string => {
+const buildFillScript = (info: ShareInfo, egm?: EGMLocation | null): string => {
   const description   = generateMessage(info, 'egm');
-  const city          = info.location.city          ?? '';
-  const district      = info.location.district      ?? '';
-  const neighbourhood = info.location.neighbourhood ?? '';
-  const road          = info.location.road          ?? '';
+  /* EGM'den çözüldüyse exact label kullan, yoksa Nominatim fallback */
+  const city          = egm?.city          || info.location.city          || '';
+  const district      = egm?.district      || info.location.district      || '';
+  const neighbourhood = egm?.neighbourhood || info.location.neighbourhood || '';
+  const road          = egm?.road          || info.location.road          || '';
 
   const esc = (s: string) =>
     s.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n').replace(/\r/g, '');
@@ -324,14 +448,12 @@ const buildFillScript = (info: ShareInfo): string => {
   /* ── Wait until the form dropdowns are ready ────────────────────────── */
   function waitForm(cb, n) {
     n = n || 0;
-    /* Start as soon as we have ≥2 ant-select elements (form structure mounted) */
     var selects = document.querySelectorAll('.ant-select');
     if (selects.length >= 2) {
       dbg('form ready at n=' + n + ' selects=' + selects.length);
       cb();
       return;
     }
-    /* Fallback: textarea/input appeared */
     var el = document.getElementById('description')
           || document.getElementById('olayDetay')
           || document.getElementById('aciklama')
@@ -346,20 +468,56 @@ const buildFillScript = (info: ShareInfo): string => {
     setTimeout(function() { waitForm(cb, n + 1); }, 200);
   }
 
+  /* ── EGM auto-login + data yüklenene kadar city dropdown'ı bekle ─────── */
+  function waitForCityOptions(cb, n) {
+    n = n || 0;
+    /* DOM'da city wrapper'ı bul */
+    var cityInput = document.getElementById('cityDropdown');
+    var wrapper = cityInput
+      ? (cityInput.closest ? cityInput.closest('.ant-select') : null)
+      : document.querySelectorAll('.ant-form-item .ant-select, .ant-row .ant-select')[0];
+
+    if (!wrapper) {
+      if (n > 20) { dbg('waitForCityOptions: wrapper not found'); cb(); return; }
+      setTimeout(function() { waitForCityOptions(cb, n + 1); }, 300);
+      return;
+    }
+
+    /* Dropdown'ı aç, option sayısına bak, hemen kapat */
+    var sel = wrapper.querySelector('.ant-select-selector');
+    if (sel) {
+      sel.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, cancelable: true}));
+      sel.dispatchEvent(new MouseEvent('click',     {bubbles: true, cancelable: true}));
+    }
+    setTimeout(function() {
+      var dropdown = getVisibleDropdown();
+      var items = dropdown ? dropdown.querySelectorAll('.ant-select-item-option').length : 0;
+      /* Dropdown'ı kapat */
+      document.body.dispatchEvent(new MouseEvent('mousedown', {bubbles: true}));
+
+      dbg('waitForCityOptions n=' + n + ' items=' + items);
+      if (items > 0 || n > 24) {
+        /* Kısa bekleme — kapat animasyonu bitsin */
+        setTimeout(cb, 400);
+      } else {
+        /* EGM henüz token almadı / şehir listesi gelmedi, tekrar dene */
+        setTimeout(function() { waitForCityOptions(cb, n + 1); }, 600);
+      }
+    }, 400);
+  }
+
   /* ── Main sequence ────────────────────────────────────────────────────── */
   dbg('script start: city=' + CITY + ' dist=' + DIST + ' hood=' + HOOD + ' road=' + ROAD);
 
   waitForm(function() {
-    setTimeout(function() {
+    /* Önce EGM'nin auto-login + şehir verisini yüklemesini bekle */
+    waitForCityOptions(function() {
       openAndSelect('cityDropdown',          CITY, 0, function() {
         openAndSelect('districtDropdown',    DIST, 1, function() {
           openAndSelect('neighboorhoodDropdown', HOOD, 2, function() {
             openAndSelect('streetDropdown', ROAD, 3, function() {
-              /* Açıklamayı EN SON doldur — dropdown seçimleri React state'i
-                 resetlemesin diye cascade bittikten sonra çalışıyor */
               setTimeout(function() {
                 fillDesc();
-                /* İkinci deneme: bazı formlar ilk render'da ignore ediyor */
                 setTimeout(fillDesc, 600);
               }, 300);
               dbg('cascade complete');
@@ -367,7 +525,7 @@ const buildFillScript = (info: ShareInfo): string => {
           });
         });
       });
-    }, 800);
+    });
   });
 
   true;
@@ -382,30 +540,51 @@ export const EGMWebViewScreen = () => {
   const {colors}    = useTheme();
   const styles      = useMemo(() => makeStyles(colors), [colors]);
   const webViewRef  = useRef<WebView>(null);
-  const injected    = useRef(false);
-  const [loading, setLoading]     = useState(true);
-  const [canGoBack, setCanGoBack] = useState(false);
+
+  const [webLoading,  setWebLoading]  = useState(true);
+  const [egmLoading,  setEgmLoading]  = useState(true);
+  const [egmLocation, setEgmLocation] = useState<EGMLocation | null>(null);
+  const [canGoBack,   setCanGoBack]   = useState(false);
+  const scriptFired = useRef(false);
 
   const info = (route.params as any)?.info as ShareInfo | undefined;
 
-  const runFillScript = () => {
-    if (!info || !webViewRef.current || injected.current) return;
-    injected.current = true;
-    webViewRef.current.injectJavaScript(buildFillScript(info) + '\ntrue;');
-  };
+  /* EGM API'sinden konum verilerini çöz */
+  useEffect(() => {
+    if (!info) { setEgmLoading(false); return; }
+    resolveEGMLocation(info).then(res => {
+      setEgmLocation(res);
+      setEgmLoading(false);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /* WebView yüklendi + EGM çözüldü → script çalıştır */
+  useEffect(() => {
+    if (webLoading || egmLoading || scriptFired.current) return;
+    if (!info || !webViewRef.current) return;
+    scriptFired.current = true;
+    webViewRef.current.injectJavaScript(buildFillScript(info, egmLocation) + '\ntrue;');
+  }, [webLoading, egmLoading, info, egmLocation]);
 
   const handleMessage = (event: any) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
       if (data.t === 'dbg') {
         console.log('[EGM]', data.m);
-        /* Kritik hataları Alert ile göster */
         if (data.m.startsWith('TIMEOUT') || data.m.startsWith('NOT FOUND')) {
           Alert.alert('EGM Debug', data.m);
         }
       }
     } catch {}
   };
+
+  /* Token varsa WebView açılmadan localStorage'a yaz → EGM anında hazır */
+  const preloadScript = egmLocation?.token
+    ? `try{localStorage.setItem('NEXT_TRANSLATES_VALUES','${egmLocation.token}');}catch(e){}true;`
+    : undefined;
+
+  const isLoading = webLoading || egmLoading;
 
   return (
     <View style={[styles.container, {paddingTop: insets.top}]}>
@@ -419,16 +598,18 @@ export const EGMWebViewScreen = () => {
         </TouchableOpacity>
         <View style={styles.headerCenter}>
           <Text style={styles.headerTitle} numberOfLines={1}>EGM İhbar Formu</Text>
-          <Text style={styles.headerSub} numberOfLines={1}>ihbar.ng112.gov.tr</Text>
+          <Text style={[styles.headerSub, {color: colors.textSecondary}]} numberOfLines={1}>
+            {egmLoading ? 'Konum eşleştiriliyor...' : egmLocation ? 'Konum hazır ✓' : 'ihbar.ng112.gov.tr'}
+          </Text>
         </View>
         <View style={styles.backBtn} />
       </View>
 
-      {loading && (
+      {isLoading && (
         <View style={styles.loadingOverlay}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={[styles.loadingText, {color: colors.textSecondary}]}>
-            EGM formu yükleniyor...
+            {egmLoading ? 'EGM konumu eşleştiriliyor...' : 'Form yükleniyor...'}
           </Text>
         </View>
       )}
@@ -437,20 +618,23 @@ export const EGMWebViewScreen = () => {
         ref={webViewRef}
         source={{uri: EGM_URL}}
         style={styles.webview}
-        onLoadEnd={() => { setLoading(false); runFillScript(); }}
-        onError={() => setLoading(false)}
+        injectedJavaScriptBeforeContentLoaded={preloadScript}
+        onLoadEnd={() => setWebLoading(false)}
+        onError={() => setWebLoading(false)}
         onNavigationStateChange={s => setCanGoBack(s.canGoBack)}
         onMessage={handleMessage}
         javaScriptEnabled
         domStorageEnabled
         startInLoadingState={false}
-        userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+        userAgent={EGM_UA}
       />
 
       {info && (
         <View style={[styles.hint, {backgroundColor: colors.card, borderTopColor: colors.border}]}>
           <Text style={[styles.hintText, {color: colors.textSecondary}]}>
-            💡 İl → İlçe → Mahalle → Cadde otomatik dolduruluyor
+            {egmLocation
+              ? `✓ ${egmLocation.city} / ${egmLocation.district}${egmLocation.neighbourhood ? ' / ' + egmLocation.neighbourhood : ''}`
+              : '💡 İl → İlçe → Mahalle → Cadde otomatik dolduruluyor'}
           </Text>
         </View>
       )}

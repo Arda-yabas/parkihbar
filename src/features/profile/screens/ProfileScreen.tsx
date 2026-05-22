@@ -1,4 +1,4 @@
-import React, {useEffect, useState, useMemo} from 'react';
+import React, {useEffect, useState, useMemo, useRef} from 'react';
 import {
   StyleSheet,
   View,
@@ -7,18 +7,30 @@ import {
   TouchableOpacity,
   Alert,
   Linking,
+  Animated,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {useNavigation} from '@react-navigation/native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {AuthService, FirestoreService} from '../../../services/firebase';
 import {useTheme, Colors} from '../../../theme/ThemeContext';
+import {CATEGORY_OPTIONS} from '../../../constants/reportTemplates';
 
-const CAUSES = [
-  {id: 'sehit',   icon: '🎖️', title: 'Şehit Aileleri',   desc: 'Vatanı için hayatını kaybedenlerin aileleri'},
-  {id: 'engelli', icon: '♿',  title: 'Engelli Bireyler', desc: 'Engelli bireylerin erişim hakkı için'},
-  {id: 'gazi',    icon: '🏅', title: 'Gaziler',           desc: 'Görevde yaralanan gazilerin iyileşmesi için'},
-];
+const VIOLATION_ICONS: Record<string, string> = Object.fromEntries(CATEGORY_OPTIONS.map(c => [c.value, c.icon]));
+const VIOLATION_NAMES: Record<string, string> = Object.fromEntries(CATEGORY_OPTIONS.map(c => [c.value, c.label]));
+
+function formatTime(createdAt: any): string {
+  if (!createdAt) return '';
+  const ms: number = createdAt.toMillis ? createdAt.toMillis() : Number(createdAt);
+  if (!ms) return '';
+  const mins = Math.floor((Date.now() - ms) / 60000);
+  if (mins < 2) return 'Az önce';
+  if (mins < 60) return `${mins} dakika önce`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} saat önce`;
+  const days = Math.floor(hours / 24);
+  return days < 7 ? `${days} gün önce` : `${Math.floor(days / 7)} hafta önce`;
+}
 
 const LEVEL_NAMES: {[key: number]: {name: string; icon: string}} = {
   1: {name: 'Gözlemci', icon: '🌱'},
@@ -72,27 +84,52 @@ export const ProfileScreen = () => {
   const [localAvatar, setLocalAvatar] = useState('👤');
   const [loading, setLoading] = useState(true);
   const [badgesExpanded, setBadgesExpanded] = useState(false);
-  const [selectedCause, setSelectedCause] = useState('sehit');
-  const [donationPoints] = useState(12);
-  const [communityPoints] = useState(8240);
+  const tooltipOpacity = useRef(new Animated.Value(0)).current;
+  const [myReports, setMyReports] = useState<{id: string; type: string; icon: string; time: string; status: string}[]>([]);
 
   useEffect(() => {
-    AsyncStorage.multiGet(['@username', '@avatar', '@selected_cause']).then(pairs => {
+    AsyncStorage.multiGet(['@username', '@avatar', '@settings_tooltip_shown']).then(pairs => {
       if (pairs[0][1]) setLocalName(pairs[0][1]);
       if (pairs[1][1]) setLocalAvatar(pairs[1][1]);
-      if (pairs[2][1]) setSelectedCause(pairs[2][1]);
+      if (!pairs[2][1]) {
+        // İlk ziyaret — tooltip göster
+        setTimeout(() => {
+          Animated.sequence([
+            Animated.timing(tooltipOpacity, {toValue: 1, duration: 300, useNativeDriver: true}),
+            Animated.delay(2200),
+            Animated.timing(tooltipOpacity, {toValue: 0, duration: 400, useNativeDriver: true}),
+          ]).start();
+          AsyncStorage.setItem('@settings_tooltip_shown', 'true').catch(() => {});
+        }, 800);
+      }
     }).catch(() => {});
 
     const user = AuthService.getCurrentUser();
-    if (user) {
-      FirestoreService.getUserData(user.uid)
-        .then(data => setUserData(data ?? {}))
-        .catch(() => setUserData({}))
-        .finally(() => setLoading(false));
-    } else {
+    if (!user) {
       setUserData({});
       setLoading(false);
+      return;
     }
+
+    const unsubUser = FirestoreService.listenUserData(user.uid, data => {
+      setUserData(data ?? {});
+      setLoading(false);
+    });
+
+    const unsubReports = FirestoreService.listenUserReports(user.uid, 3, reports => {
+      setMyReports(reports.map(r => ({
+        id: r.id ?? '',
+        type: VIOLATION_NAMES[r.type] ?? r.type?.replace(/_/g, ' '),
+        icon: VIOLATION_ICONS[r.type] ?? '🚗',
+        time: formatTime(r.createdAt),
+        status: r.status,
+      })));
+    });
+
+    return () => {
+      unsubUser();
+      unsubReports();
+    };
   }, []);
 
   if (loading) {
@@ -142,6 +179,10 @@ export const ProfileScreen = () => {
           activeOpacity={0.7}>
           <Text style={styles.gearIcon}>⚙️</Text>
         </TouchableOpacity>
+        <Animated.View style={[styles.tooltip, {top: insets.top + 52, opacity: tooltipOpacity}]}>
+          <Text style={styles.tooltipText}>Ayarlar</Text>
+          <View style={styles.tooltipArrow} />
+        </Animated.View>
 
         <View style={styles.headerTop}>
           <View style={styles.avatarRing}>
@@ -221,51 +262,36 @@ export const ProfileScreen = () => {
         </View>
       </View>
 
-      {/* Sosyal Etki */}
+      {/* Son İhbarlarım */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>💚 Sosyal Etkin</Text>
-        <Text style={styles.impactDesc}>
-          Her günlük hedefte 1 Etki Puanı kazanırsın. Topluluk büyüdükçe bu puanlar kurumsal iş birlikleriyle gerçek bağışa dönüşecek — cebinden bir kuruş çıkmadan.
-        </Text>
-        <View style={styles.causeRow}>
-          {CAUSES.map(cause => {
-            const active = selectedCause === cause.id;
-            return (
-              <TouchableOpacity
-                key={cause.id}
-                style={[styles.causeCard, active && styles.causeCardActive]}
-                activeOpacity={0.8}
-                onPress={() => {
-                  setSelectedCause(cause.id);
-                  AsyncStorage.setItem('@selected_cause', cause.id).catch(() => {});
-                }}>
-                <Text style={styles.causeIcon}>{cause.icon}</Text>
-                <Text style={[styles.causeName, active && styles.causeNameActive]} numberOfLines={2}>
-                  {cause.title}
+        <View style={styles.sectionHeaderRow}>
+          <Text style={styles.sectionTitle}>📋 Son İhbarlarım</Text>
+          <TouchableOpacity onPress={() => (navigation as any).navigate('UserReports', {
+            userId: AuthService.getCurrentUser()?.uid ?? '',
+            userName: userData?.displayName || localName,
+            avatar: localAvatar,
+          })}>
+            <Text style={styles.sectionLink}>Tümü →</Text>
+          </TouchableOpacity>
+        </View>
+        {myReports.length === 0 ? (
+          <Text style={styles.emptyText}>Henüz ihbarın yok. İlk ihbarını yap! 🎯</Text>
+        ) : (
+          myReports.map(r => (
+            <View key={r.id} style={styles.myReportRow}>
+              <Text style={styles.myReportIcon}>{r.icon}</Text>
+              <View style={styles.myReportInfo}>
+                <Text style={styles.myReportType}>{r.type}</Text>
+                <Text style={styles.myReportTime}>{r.time}</Text>
+              </View>
+              <View style={[styles.myReportBadge, r.status === 'verified' && styles.myReportBadgeVerified]}>
+                <Text style={styles.myReportBadgeText}>
+                  {r.status === 'verified' ? '✓ Onaylı' : '⏳ Bekliyor'}
                 </Text>
-                {active && (
-                  <View style={styles.causeCheck}>
-                    <Text style={styles.causeCheckText}>✓</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-        <Text style={styles.causeDescText}>
-          {CAUSES.find(c => c.id === selectedCause)?.desc}
-        </Text>
-        <View style={styles.impactStatsRow}>
-          <View style={styles.impactStat}>
-            <Text style={styles.impactStatNum}>{donationPoints}</Text>
-            <Text style={styles.impactStatLabel}>Senin birikimin</Text>
-          </View>
-          <View style={styles.impactStatDivider} />
-          <View style={styles.impactStat}>
-            <Text style={styles.impactStatNum}>{communityPoints.toLocaleString('tr-TR')}</Text>
-            <Text style={styles.impactStatLabel}>Topluluk birikimi</Text>
-          </View>
-        </View>
+              </View>
+            </View>
+          ))
+        )}
       </View>
 
       {/* Acil Durum */}
@@ -273,7 +299,7 @@ export const ProfileScreen = () => {
         <Text style={styles.sectionTitle}>🚨 Acil Hatlar</Text>
         <View style={styles.emergencyRow}>
           {[
-            {number: '112', label: 'Acil'},
+            {number: '112', label: 'Acil Yardım'},
             {number: '181', label: 'Zabıta'},
             {number: '153', label: 'Belediye'},
           ].map(({number, label}) => (
@@ -287,6 +313,7 @@ export const ProfileScreen = () => {
                   {text: 'Ara', onPress: () => Linking.openURL(`tel:${number}`)},
                 ])
               }>
+              <Text style={styles.emergencyCallIcon}>📞</Text>
               <Text style={styles.emergencyNumber}>{number}</Text>
               <Text style={styles.emergencyLabel}>{label}</Text>
             </TouchableOpacity>
@@ -315,6 +342,20 @@ const makeStyles = (colors: Colors) => StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   gearIcon: {fontSize: 18},
+  tooltip: {
+    position: 'absolute', right: 8, zIndex: 20,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    paddingHorizontal: 12, paddingVertical: 6,
+    borderRadius: 8,
+  },
+  tooltipText: {fontSize: 12, fontWeight: '600', color: '#FFFFFF'},
+  tooltipArrow: {
+    position: 'absolute', top: -6, right: 14,
+    width: 0, height: 0,
+    borderLeftWidth: 6, borderRightWidth: 6, borderBottomWidth: 6,
+    borderLeftColor: 'transparent', borderRightColor: 'transparent',
+    borderBottomColor: 'rgba(0,0,0,0.75)',
+  },
   headerTop: {flexDirection: 'row', alignItems: 'center', paddingBottom: 20, gap: 16},
   avatarRing: {
     width: 80, height: 80, borderRadius: 40,
@@ -350,7 +391,7 @@ const makeStyles = (colors: Colors) => StyleSheet.create({
     backgroundColor: colors.card, borderRadius: 16,
     shadowColor: '#000', shadowOffset: {width: 0, height: 1}, shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
   },
-  sectionTitle: {fontSize: 18, fontWeight: '600', color: colors.text, marginBottom: 12},
+  sectionTitle: {fontSize: 16, fontWeight: '700', color: colors.text, marginBottom: 12},
   progressBar: {height: 12, backgroundColor: colors.border, borderRadius: 6, overflow: 'hidden', marginBottom: 8},
   progressFill: {height: '100%', backgroundColor: colors.primary, borderRadius: 6},
   progressText: {fontSize: 16, fontWeight: '600', color: colors.text, marginBottom: 4},
@@ -359,45 +400,37 @@ const makeStyles = (colors: Colors) => StyleSheet.create({
   badgesToggle: {fontSize: 13, fontWeight: '600', color: colors.primary},
   badgesGrid: {flexDirection: 'row', flexWrap: 'wrap', gap: 10},
   badgeCard: {
-    width: '30%', paddingVertical: 14, paddingHorizontal: 6,
+    width: '30%', paddingVertical: 10, paddingHorizontal: 4,
     backgroundColor: colors.primary, borderRadius: 12, alignItems: 'center',
   },
   badgeCardLocked: {backgroundColor: colors.border, opacity: 0.5},
   badgeIconWrap: {
-    width: 48, height: 48, borderRadius: 24,
+    width: 38, height: 38, borderRadius: 19,
     backgroundColor: 'rgba(255,255,255,0.2)',
-    alignItems: 'center', justifyContent: 'center', marginBottom: 8,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 6,
   },
-  badgeIcon: {fontSize: 26},
-  badgeName: {fontSize: 10, fontWeight: '600', color: '#FFFFFF', textAlign: 'center', lineHeight: 13},
+  badgeIcon: {fontSize: 20},
+  badgeName: {fontSize: 9, fontWeight: '600', color: '#FFFFFF', textAlign: 'center', lineHeight: 12},
   badgeNameLocked: {color: colors.textSecondary},
-  impactDesc: {fontSize: 13, color: colors.textSecondary, lineHeight: 19, marginBottom: 16},
-  causeRow: {flexDirection: 'row', gap: 10, marginBottom: 10},
-  causeCard: {
-    flex: 1, borderRadius: 14, borderWidth: 2, borderColor: colors.border,
-    backgroundColor: colors.background, padding: 12, alignItems: 'center', position: 'relative',
-  },
-  causeCardActive: {borderColor: colors.primary, backgroundColor: colors.primaryLight},
-  causeIcon: {fontSize: 24, marginBottom: 6},
-  causeName: {fontSize: 11, fontWeight: '700', color: colors.textSecondary, textAlign: 'center'},
-  causeNameActive: {color: colors.primary},
-  causeCheck: {
-    position: 'absolute', top: 6, right: 6, width: 18, height: 18,
-    borderRadius: 9, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center',
-  },
-  causeCheckText: {fontSize: 10, color: '#FFF', fontWeight: '900'},
-  causeDescText: {fontSize: 12, color: colors.textSecondary, fontStyle: 'italic', textAlign: 'center', marginBottom: 14},
-  impactStatsRow: {flexDirection: 'row', backgroundColor: colors.background, borderRadius: 12, padding: 14},
-  impactStat: {flex: 1, alignItems: 'center'},
-  impactStatDivider: {width: 1, backgroundColor: colors.border, marginVertical: 4},
-  impactStatNum: {fontSize: 22, fontWeight: '900', color: colors.primary, marginBottom: 3},
-  impactStatLabel: {fontSize: 11, color: colors.textSecondary, fontWeight: '500'},
+  sectionHeaderRow: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12},
+  sectionLink: {fontSize: 13, fontWeight: '600', color: colors.primary},
+  emptyText: {fontSize: 13, color: colors.textSecondary, textAlign: 'center', paddingVertical: 8},
+  myReportRow: {flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border},
+  myReportIcon: {fontSize: 26, marginRight: 12},
+  myReportInfo: {flex: 1},
+  myReportType: {fontSize: 14, fontWeight: '600', color: colors.text, marginBottom: 2},
+  myReportTime: {fontSize: 12, color: colors.textSecondary},
+  myReportBadge: {paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, backgroundColor: '#FFF3CD'},
+  myReportBadgeVerified: {backgroundColor: '#D4EDDA'},
+  myReportBadgeText: {fontSize: 11, fontWeight: '600', color: '#856404'},
   emergencyRow: {flexDirection: 'row', gap: 10},
   emergencyButton: {
     flex: 1, backgroundColor: colors.background,
-    borderWidth: 1, borderColor: colors.border,
-    borderRadius: 12, paddingVertical: 14, alignItems: 'center',
+    borderWidth: 1, borderColor: colors.border, borderRadius: 14,
+    paddingVertical: 14, alignItems: 'center', justifyContent: 'center',
+    position: 'relative',
   },
-  emergencyNumber: {fontSize: 20, fontWeight: '700', color: colors.text, marginBottom: 4},
-  emergencyLabel: {fontSize: 11, fontWeight: '500', color: colors.textSecondary},
+  emergencyCallIcon: {position: 'absolute', left: 10, top: '50%', fontSize: 15},
+  emergencyNumber: {fontSize: 20, fontWeight: '800', color: colors.text, textAlign: 'center', marginBottom: 3},
+  emergencyLabel: {fontSize: 11, fontWeight: '500', color: colors.textSecondary, textAlign: 'center'},
 });

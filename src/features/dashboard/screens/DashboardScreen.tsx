@@ -1,10 +1,12 @@
 import React, {useState, useEffect, useRef, useMemo, useCallback} from 'react';
-import {StyleSheet, View, Text, TouchableOpacity, ScrollView, Animated} from 'react-native';
+import {StyleSheet, View, Text, TouchableOpacity, ScrollView, Animated, Linking, FlatList, AppState} from 'react-native';
 import {useNavigation, useFocusEffect} from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {useTheme, Colors} from '../../../theme/ThemeContext';
 import {AuthService, FirestoreService} from '../../../services/firebase';
+import {GamificationService} from '../../../services/gamification.service';
 import {CATEGORY_OPTIONS} from '../../../constants/reportTemplates';
+import {CAUSES} from '../../../constants/causes';
 
 const VIOLATION_ICONS: Record<string, string> = Object.fromEntries(
   CATEGORY_OPTIONS.map(c => [c.value, c.icon]),
@@ -36,11 +38,8 @@ const LEVEL_NAMES: {[key: number]: {name: string; icon: string}} = {
 };
 const LEVEL_POINTS = [0, 100, 300, 600, 1000, 2000];
 
-const CAUSES = [
-  {id: 'sehit',   icon: '🎖️', title: 'Şehit Aileleri',   desc: 'Vatanı için hayatını kaybedenlerin aileleri'},
-  {id: 'engelli', icon: '♿',  title: 'Engelli Bireyler',  desc: 'Engelli bireylerin erişim hakkı için'},
-  {id: 'gazi',    icon: '🏅', title: 'Gaziler',            desc: 'Görevde yaralanan gazilerin iyileşmesi için'},
-];
+const CARD_WIDTH = 118;
+const CARD_GAP = 8;
 
 export const DashboardScreen = () => {
   const navigation = useNavigation();
@@ -48,56 +47,52 @@ export const DashboardScreen = () => {
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const [userData, setUserData] = useState({level: 1, points: 0, totalReports: 0});
-  const [recentReports, setRecentReports] = useState<{id: string; type: string; icon: string; time: string; status: string}[]>([]);
-  const [topUsers, setTopUsers] = useState<{id: string; name: string; points: number; avatar: string}[]>([]);
-  const [dailyProgress] = useState(0);
+  const [recentReports, setRecentReports] = useState<{id: string; type: string; icon: string; time: string; status: string; raw: any}[]>([]);
+  const [dailyProgress, setDailyProgress] = useState(0);
   const [userAvatar, setUserAvatar] = useState('👤');
-  const [selectedCause] = useState('sehit');
-  const [donationPoints] = useState(12);
   const [unreadCount, setUnreadCount] = useState(0);
+
+  const donationListRef = useRef<FlatList>(null);
+  const donationIndex = useRef(0);
+  const donationInterval = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
 
   useEffect(() => {
     AsyncStorage.getItem('@avatar').then(v => { if (v) setUserAvatar(v); }).catch(() => {});
-    loadUserData();
-    loadRecentReports();
-    loadLeaderboard();
     Animated.parallel([
       Animated.timing(fadeAnim, {toValue: 1, duration: 600, useNativeDriver: true}),
       Animated.timing(slideAnim, {toValue: 0, duration: 600, useNativeDriver: true}),
     ]).start();
-  }, []);
 
-  useFocusEffect(
-    useCallback(() => {
-      const user = AuthService.getCurrentUser();
-      if (!user) return;
-      FirestoreService.getUnreadNotificationCount(user.uid)
-        .then(setUnreadCount)
-        .catch(() => {});
-    }, []),
-  );
+    const user = AuthService.getCurrentUser();
 
-  const loadUserData = async () => {
-    try {
-      const user = AuthService.getCurrentUser();
-      if (!user) return;
-      const data = await FirestoreService.getUserData(user.uid);
-      if (data) {
-        setUserData({
-          level: data.level || 1,
-          points: data.points || 0,
-          totalReports: data.totalReports || 0,
-        });
-      }
-    } catch {}
-  };
+    const prevDailyProgress = {current: 0};
+    const unsubUser = user
+      ? FirestoreService.listenUserData(user.uid, data => {
+          if (data) {
+            setUserData({level: data.level || 1, points: data.points || 0, totalReports: data.totalReports || 0});
+          }
+          // Günlük görev — kullanıcı verisi değişince bugünkü sayıyı güncelle
+          FirestoreService.getTodayReportCount(user.uid).then(count => {
+            // 3'e ulaştıysa ve daha önce ödül verilmediyse +50 XP ver
+            if (count >= 3 && prevDailyProgress.current < 3) {
+              const bonusKey = `@daily_bonus_${new Date().toDateString()}`;
+              AsyncStorage.getItem(bonusKey).then(given => {
+                if (!given) {
+                  AsyncStorage.setItem(bonusKey, 'true').catch(() => {});
+                  GamificationService.addPoints(user.uid, 50).catch(() => {});
+                }
+              }).catch(() => {});
+            }
+            prevDailyProgress.current = count;
+            setDailyProgress(count);
+          }).catch(() => {});
+        })
+      : () => {};
 
-  const loadRecentReports = async () => {
-    try {
-      const reports = await FirestoreService.getNearbyReports(3);
+    const unsubReports = FirestoreService.listenReports(3, reports => {
       setRecentReports(
         reports.map(r => ({
           id: r.id ?? '',
@@ -105,31 +100,47 @@ export const DashboardScreen = () => {
           icon: VIOLATION_ICONS[r.type] ?? '🚗',
           time: formatTime(r.createdAt),
           status: r.status,
+          raw: r,
         })),
       );
-    } catch {}
-  };
+    });
 
-  const loadLeaderboard = async () => {
-    try {
-      const leaders = await FirestoreService.getLeaderboard(3);
-      setTopUsers(
-        leaders.map((u: any, i) => ({
-          id: u.id ?? String(i),
-          name: u.displayName || 'Anonim',
-          points: u.points || 0,
-          avatar: '👤',
-        })),
-      );
-    } catch {}
-  };
+    const unsubUnread = user
+      ? FirestoreService.listenUnreadCount(user.uid, setUnreadCount)
+      : () => {};
 
-  const getMedalEmoji = (index: number) => {
-    if (index === 0) return '🥇';
-    if (index === 1) return '🥈';
-    if (index === 2) return '🥉';
-    return '';
-  };
+    return () => {
+      unsubUser();
+      unsubReports();
+      unsubUnread();
+    };
+  }, []);
+
+  const startDonationLoop = useCallback(() => {
+    if (donationInterval.current) clearInterval(donationInterval.current);
+    donationInterval.current = setInterval(() => {
+      donationIndex.current = (donationIndex.current + 1) % CAUSES.length;
+      donationListRef.current?.scrollToIndex({index: donationIndex.current, animated: true});
+    }, 3000);
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      startDonationLoop();
+      return () => {
+        if (donationInterval.current) clearInterval(donationInterval.current);
+      };
+    }, [startDonationLoop]),
+  );
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', state => {
+      if (state === 'active') startDonationLoop();
+      else if (donationInterval.current) clearInterval(donationInterval.current);
+    });
+    return () => sub.remove();
+  }, [startDonationLoop]);
+
 
   const trackFillPct = Math.min((dailyProgress / 2) * 100, 100);
 
@@ -245,25 +256,56 @@ export const DashboardScreen = () => {
             </Text>
           </View>
 
-          {/* Social Impact Teaser */}
-          <TouchableOpacity
-            style={styles.impactTeaser}
-            activeOpacity={0.85}
-            onPress={() => navigation.navigate('Profile' as never)}>
-            <View style={styles.impactTeaserLeft}>
-              <Text style={styles.impactTeaserIcon}>
-                {CAUSES.find(c => c.id === selectedCause)?.icon}
-              </Text>
-              <View>
-                <Text style={styles.impactTeaserLabel}>💚 SOSYAL ETKİN</Text>
-                <Text style={styles.impactTeaserTitle}>
-                  {CAUSES.find(c => c.id === selectedCause)?.title}
-                </Text>
-                <Text style={styles.impactTeaserSub}>{donationPoints} etki puanı birikti</Text>
-              </View>
+          {/* Donation Section */}
+          <View style={styles.donationSection}>
+            <View style={styles.donationSectionHeader}>
+              <Text style={styles.sectionTitle}>💚 Destekle</Text>
+              <TouchableOpacity onPress={() => navigation.navigate('Donations' as never)}>
+                <Text style={styles.seeMore}>Tümü →</Text>
+              </TouchableOpacity>
             </View>
-            <Text style={styles.impactTeaserArrow}>›</Text>
-          </TouchableOpacity>
+            <View style={styles.donationNotice}>
+              <Text style={styles.donationNoticeIcon}>💡</Text>
+              <Text style={styles.donationNoticeText}>
+                Bağış butonları sizi resmi kuruluşların sayfasına yönlendirir. Hiçbir ödeme bizim üzerimizden geçmez.
+              </Text>
+            </View>
+            <FlatList
+              ref={donationListRef}
+              data={CAUSES}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              keyExtractor={item => item.id}
+              snapToInterval={CARD_WIDTH + CARD_GAP}
+              decelerationRate="fast"
+              contentContainerStyle={styles.donationList}
+              onScrollBeginDrag={() => {
+                if (donationInterval.current) clearInterval(donationInterval.current);
+              }}
+              onMomentumScrollEnd={e => {
+                donationIndex.current = Math.round(e.nativeEvent.contentOffset.x / (CARD_WIDTH + CARD_GAP));
+                startDonationLoop();
+              }}
+              renderItem={({item}) => (
+                <TouchableOpacity
+                  style={styles.donationCard}
+                  activeOpacity={0.8}
+                  onPress={() => {
+                    FirestoreService.incrementDonationClick(item.id).catch(() => {});
+                    Linking.openURL(item.url);
+                  }}>
+                  <View style={styles.donationCardTop}>
+                    <Text style={styles.donationCardIcon}>{item.icon}</Text>
+                    <Text style={styles.donationCardTitle}>{item.title}</Text>
+                    <Text style={styles.donationCardOrg}>{item.org}</Text>
+                  </View>
+                  <View style={styles.donationCardBtn}>
+                    <Text style={styles.donationCardBtnText}>Bağış Yap</Text>
+                  </View>
+                </TouchableOpacity>
+              )}
+            />
+          </View>
 
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
@@ -273,7 +315,11 @@ export const DashboardScreen = () => {
               </TouchableOpacity>
             </View>
             {recentReports.map(report => (
-              <View key={report.id} style={styles.reportCard}>
+              <TouchableOpacity
+                key={report.id}
+                style={styles.reportCard}
+                activeOpacity={0.7}
+                onPress={() => (navigation as any).navigate('ReportDetail', {report: report.raw})}>
                 <Text style={styles.reportIcon}>{report.icon}</Text>
                 <View style={styles.reportInfo}>
                   <Text style={styles.reportType}>{report.type}</Text>
@@ -284,26 +330,7 @@ export const DashboardScreen = () => {
                     {report.status === 'verified' ? '✓ Onaylı' : '⏳ Bekliyor'}
                   </Text>
                 </View>
-              </View>
-            ))}
-          </View>
-
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>🏆 Bu Haftanın Liderleri</Text>
-              <TouchableOpacity onPress={() => navigation.navigate('Leaderboard' as never)}>
-                <Text style={styles.seeMore}>Tümü →</Text>
               </TouchableOpacity>
-            </View>
-            {topUsers.map((user, index) => (
-              <View key={user.id} style={styles.leaderCard}>
-                <Text style={styles.leaderMedal}>{getMedalEmoji(index)}</Text>
-                <Text style={styles.leaderAvatar}>{user.avatar}</Text>
-                <View style={styles.leaderInfo}>
-                  <Text style={styles.leaderName}>{user.name}</Text>
-                  <Text style={styles.leaderPoints}>{user.points} puan</Text>
-                </View>
-              </View>
             ))}
           </View>
 
@@ -333,90 +360,104 @@ const makeStyles = (colors: Colors) => StyleSheet.create({
   },
   notificationBadgeText: {color: '#FFFFFF', fontSize: 12, fontWeight: 'bold'},
   scrollView: {flex: 1},
-  content: {padding: 16},
+  content: {padding: 12},
   gameCard: {
     backgroundColor: colors.primary,
-    borderRadius: 20,
-    marginBottom: 14,
+    borderRadius: 18,
+    marginBottom: 10,
     overflow: 'hidden',
     shadowColor: colors.primary,
-    shadowOffset: {width: 0, height: 8},
-    shadowOpacity: 0.35,
-    shadowRadius: 16,
-    elevation: 10,
+    shadowOffset: {width: 0, height: 6},
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
   },
-  gameCardTop: {flexDirection: 'row', alignItems: 'center', padding: 20, paddingBottom: 16},
-  levelCircleWrapper: {alignItems: 'center', marginRight: 16},
+  gameCardTop: {flexDirection: 'row', alignItems: 'center', padding: 12, paddingBottom: 10},
+  levelCircleWrapper: {alignItems: 'center', marginRight: 12},
   levelCircle: {
-    width: 64, height: 64, borderRadius: 32,
+    width: 46, height: 46, borderRadius: 23,
     backgroundColor: 'rgba(255,255,255,0.2)',
     borderWidth: 2, borderColor: 'rgba(255,255,255,0.5)',
     alignItems: 'center', justifyContent: 'center',
   },
-  levelCircleAvatar: {fontSize: 32},
-  levelCircleLabel: {fontSize: 10, fontWeight: '800', color: 'rgba(255,255,255,0.85)', marginTop: 6, letterSpacing: 0.5},
+  levelCircleAvatar: {fontSize: 22},
+  levelCircleLabel: {fontSize: 9, fontWeight: '800', color: 'rgba(255,255,255,0.85)', marginTop: 4, letterSpacing: 0.5},
   levelDetails: {flex: 1},
-  levelTitleRow: {flexDirection: 'row', alignItems: 'center', marginBottom: 8},
-  levelLabel: {fontSize: 15, fontWeight: '800', color: '#FFFFFF'},
-  maxBadge: {marginLeft: 8, backgroundColor: '#FFD700', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2},
+  levelTitleRow: {flexDirection: 'row', alignItems: 'center', marginBottom: 6},
+  levelLabel: {fontSize: 13, fontWeight: '800', color: '#FFFFFF'},
+  maxBadge: {marginLeft: 6, backgroundColor: '#FFD700', borderRadius: 5, paddingHorizontal: 5, paddingVertical: 1},
   maxBadgeText: {fontSize: 9, fontWeight: '900', color: '#000'},
-  xpBarTrack: {height: 8, backgroundColor: 'rgba(255,255,255,0.25)', borderRadius: 4, overflow: 'hidden', marginBottom: 6},
-  xpBarFill: {height: '100%', backgroundColor: '#FFFFFF', borderRadius: 4},
-  xpText: {fontSize: 11, color: 'rgba(255,255,255,0.75)', fontWeight: '500'},
+  xpBarTrack: {height: 6, backgroundColor: 'rgba(255,255,255,0.25)', borderRadius: 3, overflow: 'hidden', marginBottom: 4},
+  xpBarFill: {height: '100%', backgroundColor: '#FFFFFF', borderRadius: 3},
+  xpText: {fontSize: 10, color: 'rgba(255,255,255,0.75)', fontWeight: '500'},
   gameStatsRow: {
     flexDirection: 'row',
     borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.15)',
-    marginHorizontal: 16, paddingVertical: 14,
+    marginHorizontal: 12, paddingVertical: 9,
   },
   gameStat: {flex: 1, alignItems: 'center'},
   gameStatDivider: {borderLeftWidth: 1, borderLeftColor: 'rgba(255,255,255,0.2)'},
-  gameStatIcon: {fontSize: 18, marginBottom: 4},
-  gameStatValue: {fontSize: 18, fontWeight: '800', color: '#FFFFFF', marginBottom: 2},
-  gameStatLabel: {fontSize: 11, color: 'rgba(255,255,255,0.7)', fontWeight: '600'},
+  gameStatIcon: {fontSize: 14, marginBottom: 2},
+  gameStatValue: {fontSize: 15, fontWeight: '800', color: '#FFFFFF', marginBottom: 1},
+  gameStatLabel: {fontSize: 10, color: 'rgba(255,255,255,0.7)', fontWeight: '600'},
   missionCard: {
     backgroundColor: colors.card,
-    borderRadius: 20, padding: 18, marginBottom: 14,
-    shadowColor: '#000', shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.08, shadowRadius: 10, elevation: 4,
+    borderRadius: 16, padding: 12, marginBottom: 10,
+    shadowColor: '#000', shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.07, shadowRadius: 8, elevation: 3,
     borderLeftWidth: 4, borderLeftColor: colors.accent,
   },
-  missionHeader: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16},
-  missionLabel: {fontSize: 10, fontWeight: '700', color: colors.accent, letterSpacing: 1.2, marginBottom: 4},
-  missionTitle: {fontSize: 17, fontWeight: '800', color: colors.text},
-  missionBadge: {backgroundColor: colors.accentLight, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 8},
-  missionBadgeText: {fontSize: 18, fontWeight: '800', color: colors.accent},
+  missionHeader: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10},
+  missionLabel: {fontSize: 9, fontWeight: '700', color: colors.accent, letterSpacing: 1.2, marginBottom: 2},
+  missionTitle: {fontSize: 14, fontWeight: '800', color: colors.text},
+  missionBadge: {backgroundColor: colors.accentLight, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 5},
+  missionBadgeText: {fontSize: 14, fontWeight: '800', color: colors.accent},
   missionDots: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    marginBottom: 12, position: 'relative',
+    marginBottom: 8, position: 'relative',
   },
   missionTrack: {
-    position: 'absolute', left: 20, right: 20, height: 4,
+    position: 'absolute', left: 16, right: 16, height: 3,
     backgroundColor: colors.border, borderRadius: 2, zIndex: 0,
   },
   missionTrackFill: {height: '100%', backgroundColor: colors.accent, borderRadius: 2},
   missionDot: {
-    width: 40, height: 40, borderRadius: 20,
+    width: 32, height: 32, borderRadius: 16,
     backgroundColor: colors.border, alignItems: 'center', justifyContent: 'center',
     zIndex: 1, borderWidth: 2, borderColor: colors.border,
   },
   missionDotDone: {backgroundColor: colors.accent, borderColor: colors.accent},
-  missionDotCheck: {fontSize: 16, color: '#FFFFFF', fontWeight: '700'},
-  missionDotNum: {fontSize: 15, color: colors.textSecondary, fontWeight: '700'},
-  missionReward: {fontSize: 13, color: colors.textSecondary, fontWeight: '500'},
-  impactTeaser: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: colors.card, borderRadius: 16, padding: 14, marginBottom: 14,
-    borderLeftWidth: 4, borderLeftColor: colors.primary,
-    shadowColor: '#000', shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.07, shadowRadius: 8, elevation: 3,
+  missionDotCheck: {fontSize: 13, color: '#FFFFFF', fontWeight: '700'},
+  missionDotNum: {fontSize: 12, color: colors.textSecondary, fontWeight: '700'},
+  missionReward: {fontSize: 11, color: colors.textSecondary, fontWeight: '500'},
+  donationSection: {marginBottom: 14},
+  donationSectionHeader: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6},
+  donationNotice: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 6,
+    backgroundColor: colors.accentLight,
+    borderRadius: 10, padding: 9, marginBottom: 10,
+    borderLeftWidth: 3, borderLeftColor: colors.accent,
   },
-  impactTeaserLeft: {flexDirection: 'row', alignItems: 'center', flex: 1, gap: 14},
-  impactTeaserIcon: {fontSize: 32},
-  impactTeaserLabel: {fontSize: 10, fontWeight: '700', color: colors.primary, letterSpacing: 1, marginBottom: 2},
-  impactTeaserTitle: {fontSize: 15, fontWeight: '800', color: colors.text, marginBottom: 2},
-  impactTeaserSub: {fontSize: 12, color: colors.textSecondary},
-  impactTeaserArrow: {fontSize: 28, color: colors.textSecondary, fontWeight: '300'},
-  section: {marginBottom: 20},
-  sectionHeader: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12},
-  sectionTitle: {fontSize: 18, fontWeight: 'bold', color: colors.text},
+  donationNoticeIcon: {fontSize: 12, marginTop: 1},
+  donationNoticeText: {flex: 1, fontSize: 11, color: colors.accent, fontWeight: '500', lineHeight: 15},
+  donationList: {gap: CARD_GAP, paddingRight: 4},
+  donationCard: {
+    width: CARD_WIDTH,
+    height: 148,
+    backgroundColor: colors.primary,
+    borderRadius: 14, padding: 11,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    shadowColor: colors.primary, shadowOffset: {width: 0, height: 3}, shadowOpacity: 0.22, shadowRadius: 6, elevation: 5,
+  },
+  donationCardTop: {alignItems: 'center'},
+  donationCardIcon: {fontSize: 28, marginBottom: 6},
+  donationCardTitle: {fontSize: 12, fontWeight: '800', color: '#FFFFFF', textAlign: 'center', marginBottom: 2},
+  donationCardOrg: {fontSize: 10, color: 'rgba(255,255,255,0.7)', textAlign: 'center'},
+  donationCardBtn: {backgroundColor: '#FFFFFF', borderRadius: 7, paddingHorizontal: 10, paddingVertical: 5},
+  donationCardBtnText: {fontSize: 11, fontWeight: '700', color: colors.primary},
+  section: {marginBottom: 14},
+  sectionHeader: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10},
+  sectionTitle: {fontSize: 16, fontWeight: 'bold', color: colors.text},
   seeMore: {fontSize: 14, color: colors.primary, fontWeight: '600'},
   reportCard: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card,
@@ -429,13 +470,4 @@ const makeStyles = (colors: Colors) => StyleSheet.create({
   reportStatus: {paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, backgroundColor: '#FFF3CD'},
   reportStatusVerified: {backgroundColor: '#D4EDDA'},
   reportStatusText: {fontSize: 12, fontWeight: '600', color: '#856404'},
-  leaderCard: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card,
-    borderRadius: 12, padding: 16, marginBottom: 12,
-  },
-  leaderMedal: {fontSize: 24, marginRight: 8},
-  leaderAvatar: {fontSize: 32, marginRight: 12},
-  leaderInfo: {flex: 1},
-  leaderName: {fontSize: 16, fontWeight: '600', color: colors.text, marginBottom: 4},
-  leaderPoints: {fontSize: 13, color: colors.textSecondary},
 });

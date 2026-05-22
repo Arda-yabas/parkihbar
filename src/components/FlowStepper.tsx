@@ -1,7 +1,7 @@
 import React from 'react';
 import {View, Text, StyleSheet} from 'react-native';
 
-const STEPS = ['Fotoğraf', 'Detaylar', 'Paylaşım'];
+const STEPS = ['Fotoğraf', 'Detaylar', 'Yayın'];
 
 interface Props {
   currentStep: 1 | 2 | 3;

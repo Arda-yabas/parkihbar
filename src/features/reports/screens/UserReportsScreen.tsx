@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useCallback, useMemo} from 'react';
+import React, {useState, useEffect, useMemo} from 'react';
 import {
   StyleSheet,
   View,
@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import {useRoute, useNavigation} from '@react-navigation/native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
-import {FirestoreService} from '../../../services/firebase';
+import {FirestoreService, AuthService} from '../../../services/firebase';
 import {useTheme, Colors} from '../../../theme/ThemeContext';
 import {BackButton} from '../../../components/BackButton';
 
@@ -50,26 +50,29 @@ export const UserReportsScreen = () => {
   const insets = useSafeAreaInsets();
   const {colors} = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const {userId, userName, avatar = '👤'} = route.params as RouteParams;
+  const params = (route.params ?? {}) as Partial<RouteParams>;
+  const userId = params.userId || AuthService.getCurrentUser()?.uid || '';
+  const userName = params.userName || 'İhbarlarım';
+  const avatar = params.avatar ?? '👤';
 
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => { load(); }, []);
-
-  const load = useCallback(async () => {
-    try {
-      const data = await FirestoreService.getUserReports(userId, 100);
+  useEffect(() => {
+    if (!userId) return;
+    const unsub = FirestoreService.listenUserReports(userId, 100, data => {
       setReports(data as Report[]);
-    } catch {
-    } finally {
       setLoading(false);
       setRefreshing(false);
-    }
+    });
+    return () => unsub();
   }, [userId]);
 
-  const onRefresh = () => { setRefreshing(true); load(); };
+  const onRefresh = () => {
+    setRefreshing(true);
+    setTimeout(() => setRefreshing(false), 600);
+  };
 
   const total    = reports.length;
   const verified = reports.filter(r => r.status === 'verified' || r.status === 'resolved').length;

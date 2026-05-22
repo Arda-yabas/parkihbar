@@ -16,7 +16,7 @@ type SuccessRouteProp = RouteProp<CameraStackParamList, 'Success'>;
 export const SuccessScreen = () => {
   const navigation = useNavigation();
   const route = useRoute<SuccessRouteProp>();
-  const {photoUrl, localPhotoUri, type, location, note} = route.params;
+  const {photoUrl, localPhotoUri, type, location, note, points = 15} = route.params;
   const {colors} = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
@@ -43,7 +43,7 @@ export const SuccessScreen = () => {
     try {
       const user = AuthService.getCurrentUser();
       if (!user) {return;}
-      const result = await GamificationService.addPoints(user.uid, 15);
+      const result = await GamificationService.addPoints(user.uid, points);
 
       if (result?.leveledUp) {
         const oldLevelInfo = GamificationService.getLevelInfo(result.oldLevel);
@@ -62,8 +62,8 @@ export const SuccessScreen = () => {
         setBadgeData(newBadges[0]);
         setTimeout(() => setShowBadge(true), showLevelUp ? 2000 : 1000);
       }
-    } catch {
-      // Gamification hatası sessizce geçilir
+    } catch (e) {
+      console.warn('Gamification hatası:', e);
     }
   };
 
@@ -86,6 +86,11 @@ export const SuccessScreen = () => {
           </View>
           <Text style={styles.title}>İhbar Oluşturuldu</Text>
           <Text style={styles.subtitle}>Katkı için teşekkürler</Text>
+          <View style={styles.pipelineBadge}>
+            <Text style={styles.pipelineDot}>●</Text>
+            <Text style={styles.pipelineText}>@parkihbar inceliyor · onaylanırsa X'te yayınlanacak</Text>
+          </View>
+          <Text style={styles.blurNote}>Fotoğraftaki yüzler otomatik bulanıklaştırılır</Text>
         </Animated.View>
 
         <Animated.View
@@ -94,7 +99,7 @@ export const SuccessScreen = () => {
             {opacity: pointsAnim, transform: [{translateY: pointsTranslate}]},
           ]}>
           <Text style={styles.pointsLabel}>Katkı Puanı</Text>
-          <Text style={styles.points}>+15</Text>
+          <Text style={styles.points}>+{points}</Text>
         </Animated.View>
 
         <View style={styles.divider} />
@@ -137,7 +142,17 @@ const makeStyles = (colors: Colors) =>
     },
     icon: {fontSize: 56},
     title: {fontSize: 26, fontWeight: 'bold', color: colors.text, marginBottom: 6},
-    subtitle: {fontSize: 15, color: colors.textSecondary},
+    subtitle: {fontSize: 15, color: colors.textSecondary, marginBottom: 10},
+    pipelineBadge: {
+      flexDirection: 'row', alignItems: 'center', gap: 6,
+      backgroundColor: colors.card,
+      borderWidth: 1, borderColor: colors.primary + '40',
+      borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7,
+      marginTop: 2,
+    },
+    pipelineDot: {fontSize: 8, color: colors.primary},
+    pipelineText: {fontSize: 12, color: colors.primary, fontWeight: '600'},
+    blurNote: {fontSize: 11, color: colors.textSecondary, marginTop: 8},
     pointsContainer: {
       backgroundColor: colors.card, paddingHorizontal: 28, paddingVertical: 14,
       borderRadius: 16, marginBottom: 20, alignItems: 'center',

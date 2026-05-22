@@ -15,21 +15,33 @@ interface Leader {
   reportsCount: number;
 }
 
+const MS_BACK: Record<Period, number> = {
+  today: 24 * 60 * 60 * 1000,
+  week:  7  * 24 * 60 * 60 * 1000,
+  month: 30 * 24 * 60 * 60 * 1000,
+};
+
 export const LeaderboardScreen = () => {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const {colors} = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
-  const [selectedPeriod, setSelectedPeriod] = useState<Period>('today');
-  const [leaders, setLeaders] = useState<Leader[]>([]);
+  const [selectedPeriod, setSelectedPeriod] = useState<Period>('week');
+  const [allUsers, setAllUsers] = useState<any[]>([]);
 
   const scaleAnim1 = useRef(new Animated.Value(0)).current;
   const scaleAnim2 = useRef(new Animated.Value(0)).current;
   const scaleAnim3 = useRef(new Animated.Value(0)).current;
 
+  // Tek listener — period değişince yeniden abone olunmaz, sadece filtre değişir
   useEffect(() => {
-    loadLeaders();
+    const unsub = FirestoreService.listenLeaderboard(users => setAllUsers(users));
+    return () => unsub();
+  }, []);
+
+  // Period değişince animasyonu sıfırla
+  useEffect(() => {
     scaleAnim1.setValue(0);
     scaleAnim2.setValue(0);
     scaleAnim3.setValue(0);
@@ -40,27 +52,30 @@ export const LeaderboardScreen = () => {
     ]).start();
   }, [selectedPeriod]);
 
+  const leaders: Leader[] = useMemo(() => {
+    const cutoff = Date.now() - MS_BACK[selectedPeriod];
+    return allUsers
+      .filter(u => {
+        if (!u.lastReportDate) return false;
+        const ms = u.lastReportDate.toMillis ? u.lastReportDate.toMillis() : Number(u.lastReportDate);
+        return ms >= cutoff;
+      })
+      .slice(0, 10)
+      .map((u: any, i: number) => ({
+        id: u.id ?? String(i),
+        name: u.displayName || 'Anonim',
+        avatar: '👤',
+        points: u.points || 0,
+        reportsCount: u.totalReports || 0,
+      }));
+  }, [allUsers, selectedPeriod]);
+
   const goToUser = (leader: Leader) =>
     (navigation as any).navigate('UserReports', {
       userId: leader.id,
       userName: leader.name,
       avatar: leader.avatar,
     });
-
-  const loadLeaders = async () => {
-    try {
-      const data = await FirestoreService.getLeaderboard(10, selectedPeriod);
-      setLeaders(
-        data.map((u: any, i) => ({
-          id: u.id ?? String(i),
-          name: u.displayName || 'Anonim',
-          avatar: '👤',
-          points: u.points || 0,
-          reportsCount: u.totalReports || 0,
-        })),
-      );
-    } catch {}
-  };
 
   const top3 = leaders.slice(0, 3);
 
@@ -86,7 +101,6 @@ export const LeaderboardScreen = () => {
       <ScrollView style={styles.scrollView} contentContainerStyle={{paddingBottom: insets.bottom + 24}}>
         {top3.length >= 3 && (
           <View style={styles.podium}>
-            {/* 2nd place — slightly lower */}
             <TouchableOpacity style={[styles.podiumItem, {marginTop: 28}]} onPress={() => goToUser(top3[1])}>
               <Animated.View style={[styles.podiumBox, styles.podiumBox2, {transform: [{scale: scaleAnim2}]}]}>
                 <Text style={styles.podiumAvatar}>{top3[1].avatar}</Text>
@@ -97,7 +111,6 @@ export const LeaderboardScreen = () => {
               <Text style={styles.podiumMedal}>🥈</Text>
             </TouchableOpacity>
 
-            {/* 1st place — tallest / center */}
             <TouchableOpacity style={styles.podiumItem} onPress={() => goToUser(top3[0])}>
               <Animated.View style={[styles.podiumBox, styles.podiumBox1, {transform: [{scale: scaleAnim1}]}]}>
                 <Text style={[styles.podiumAvatar, styles.podiumAvatar1]}>{top3[0].avatar}</Text>
@@ -108,7 +121,6 @@ export const LeaderboardScreen = () => {
               <Text style={styles.podiumMedal}>🥇</Text>
             </TouchableOpacity>
 
-            {/* 3rd place — lowest */}
             <TouchableOpacity style={[styles.podiumItem, {marginTop: 44}]} onPress={() => goToUser(top3[2])}>
               <Animated.View style={[styles.podiumBox, styles.podiumBox3, {transform: [{scale: scaleAnim3}]}]}>
                 <Text style={styles.podiumAvatar}>{top3[2].avatar}</Text>
@@ -123,15 +135,9 @@ export const LeaderboardScreen = () => {
 
         <View style={styles.listHeader}>
           <Text style={styles.listTitle}>
-            {selectedPeriod === 'today'
-              ? '🏆 Bugünün Liderleri'
-              : selectedPeriod === 'week'
-              ? '🏆 Bu Haftanın Liderleri'
-              : '🏆 Bu Ayın Liderleri'}
+            {selectedPeriod === 'today' ? '🏆 Bugünün Liderleri' : selectedPeriod === 'week' ? '🏆 Bu Haftanın Liderleri' : '🏆 Bu Ayın Liderleri'}
           </Text>
-          {leaders.length > 0 && (
-            <Text style={styles.listSubtitle}>{leaders.length} kullanıcı</Text>
-          )}
+          {leaders.length > 0 && <Text style={styles.listSubtitle}>{leaders.length} kullanıcı</Text>}
         </View>
 
         <View style={styles.list}>
@@ -139,20 +145,12 @@ export const LeaderboardScreen = () => {
             <View style={styles.emptyState}>
               <Text style={styles.emptyIcon}>🏅</Text>
               <Text style={[styles.emptyText, {color: colors.textSecondary}]}>
-                {selectedPeriod === 'today'
-                  ? 'Bugün henüz ihbar yapılmadı'
-                  : selectedPeriod === 'week'
-                  ? 'Bu hafta henüz ihbar yapılmadı'
-                  : 'Bu ay henüz ihbar yapılmadı'}
+                {selectedPeriod === 'today' ? 'Bugün henüz ihbar yapılmadı' : selectedPeriod === 'week' ? 'Bu hafta henüz ihbar yapılmadı' : 'Bu ay henüz ihbar yapılmadı'}
               </Text>
             </View>
           ) : (
             leaders.map((leader, index) => (
-              <TouchableOpacity
-                key={leader.id}
-                style={styles.listItem}
-                activeOpacity={0.75}
-                onPress={() => goToUser(leader)}>
+              <TouchableOpacity key={leader.id} style={styles.listItem} activeOpacity={0.75} onPress={() => goToUser(leader)}>
                 <View style={styles.listRank}>
                   <Text style={styles.listRankText}>{index + 1}</Text>
                 </View>
@@ -206,10 +204,7 @@ const makeStyles = (colors: Colors) => StyleSheet.create({
   listTitle: {fontSize: 18, fontWeight: 'bold', color: colors.text},
   listSubtitle: {fontSize: 13, color: colors.textSecondary, marginTop: 2},
   list: {padding: 16, paddingTop: 0},
-  listItem: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card,
-    borderRadius: 12, padding: 16, marginBottom: 12,
-  },
+  listItem: {flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card, borderRadius: 12, padding: 16, marginBottom: 12},
   listRank: {width: 32, height: 32, borderRadius: 16, backgroundColor: colors.primary + '20', justifyContent: 'center', alignItems: 'center', marginRight: 12},
   listRankText: {fontSize: 16, fontWeight: 'bold', color: colors.primary},
   listAvatar: {fontSize: 32, marginRight: 12},

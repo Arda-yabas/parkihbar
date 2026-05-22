@@ -33,11 +33,14 @@ interface ReportData {
 export const FirestoreService = {
   async createReport(data: ReportData): Promise<string> {
     const uid = auth().currentUser?.uid ?? null;
+    const location = Object.fromEntries(
+      Object.entries(data.location as Record<string, any>).filter(([, v]) => v !== undefined),
+    );
     const doc: Record<string, any> = {
       type: data.type,
       photoUrl: data.photoUrl,
       photoUrls: data.photoUrls ?? [data.photoUrl],
-      location: data.location,
+      location,
       points: data.points,
       createdAt: firestore.FieldValue.serverTimestamp(),
       status: 'pending',
@@ -111,6 +114,30 @@ export const FirestoreService = {
     } as Report));
   },
 
+  async getTodayReportCount(userId: string): Promise<number> {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const snapshot = await firestore()
+      .collection('reports')
+      .where('userId', '==', userId)
+      .orderBy('createdAt', 'desc')
+      .limit(10)
+      .get();
+    const count = snapshot.docs.filter(doc => {
+      const ts = doc.data().createdAt;
+      if (!ts) return false;
+      const ms = ts.toMillis ? ts.toMillis() : Number(ts);
+      return ms >= todayStart.getTime();
+    }).length;
+    return Math.min(count, 3);
+  },
+
+  async getReport(reportId: string): Promise<Report | null> {
+    const doc = await firestore().collection('reports').doc(reportId).get();
+    if (!doc.exists) return null;
+    return {id: doc.id, userName: 'Anonim', ...doc.data()} as Report;
+  },
+
   async getNearbyReports(limit: number): Promise<Report[]> {
     const snapshot = await firestore()
       .collection('reports')
@@ -129,10 +156,12 @@ export const FirestoreService = {
     const ref = firestore().collection('reports').doc(reportId);
     let newCount = 0;
     let newStatus = 'pending';
+    let reportUserId: string | null = null;
     await firestore().runTransaction(async tx => {
       const doc = await tx.get(ref);
       const current = (doc.data()?.seenCount ?? 0) as number;
       newCount = current + 1;
+      reportUserId = doc.data()?.userId ?? null;
       const update: Record<string, any> = {seenCount: newCount};
       if (newCount >= 3 && doc.data()?.status === 'pending') {
         update.status = 'verified';
@@ -142,6 +171,12 @@ export const FirestoreService = {
       }
       tx.update(ref, update);
     });
+    // İhbar verified'a geçtiyse sahibinin verifiedReports sayacını artır
+    if (newStatus === 'verified' && reportUserId) {
+      firestore().collection('users').doc(reportUserId)
+        .set({verifiedReports: firestore.FieldValue.increment(1)}, {merge: true})
+        .catch(() => {});
+    }
     return {newCount, newStatus};
   },
 
@@ -225,18 +260,115 @@ export const FirestoreService = {
     });
   },
 
-  // Ekran açıldığında: 10 dakika geçmişse pending → verified
+  // Ekran açıldığında: 10 dakika geçmişse pending → verified (transaction ile race condition koruması)
   async checkAndAutoVerify(reportId: string, createdAt: any): Promise<string> {
     const createdMs: number = createdAt?.toMillis ? createdAt.toMillis() : Number(createdAt);
     if (!createdMs) return 'pending';
-    const tenMinutesAgo = Date.now() - 10 * 60 * 1000;
-    if (createdMs < tenMinutesAgo) {
-      await firestore()
-        .collection('reports')
-        .doc(reportId)
-        .update({status: 'verified'});
-      return 'verified';
+    if (Date.now() - createdMs < 10 * 60 * 1000) return 'pending';
+
+    const reportRef = firestore().collection('reports').doc(reportId);
+    let finalStatus = 'pending';
+    let ownerUid: string | null = null;
+    let didVerify = false;
+
+    await firestore().runTransaction(async tx => {
+      const doc = await tx.get(reportRef);
+      const data = doc.data();
+      if (data?.status === 'pending') {
+        tx.update(reportRef, {status: 'verified'});
+        finalStatus = 'verified';
+        ownerUid = data.userId ?? null;
+        didVerify = true;
+      } else {
+        finalStatus = data?.status ?? 'pending';
+      }
+    });
+
+    if (didVerify && ownerUid) {
+      firestore().collection('users').doc(ownerUid)
+        .set({verifiedReports: firestore.FieldValue.increment(1)}, {merge: true})
+        .catch(() => {});
     }
-    return 'pending';
+
+    return finalStatus;
+  },
+
+  async notifySeenIt(reportId: string, reportUserId: string, viewerName: string): Promise<void> {
+    await firestore().collection('notifications').add({
+      userId: reportUserId,
+      type: 'social',
+      title: '👍 Biri ihbarını onayladı',
+      message: `${viewerName} ihbarını gördüğünü bildirdi.`,
+      read: false,
+      createdAt: firestore.FieldValue.serverTimestamp(),
+      metadata: {reportId},
+    });
+  },
+
+  // ── Gerçek zamanlı dinleyiciler ──────────────────────────────────────────────
+
+  listenUserData(uid: string, cb: (data: Record<string, any> | null) => void): () => void {
+    return firestore()
+      .collection('users')
+      .doc(uid)
+      .onSnapshot(
+        doc => cb(doc.data() ? {id: doc.id, ...doc.data()} : null),
+        () => cb(null),
+      );
+  },
+
+  listenReports(limit: number, cb: (reports: Report[]) => void): () => void {
+    return firestore()
+      .collection('reports')
+      .orderBy('createdAt', 'desc')
+      .limit(limit)
+      .onSnapshot(
+        snap => cb(snap.docs.map(doc => ({id: doc.id, userName: 'Anonim', ...doc.data()} as Report))),
+        () => {},
+      );
+  },
+
+  listenUserReports(uid: string, limit: number, cb: (reports: Report[]) => void): () => void {
+    return firestore()
+      .collection('reports')
+      .where('userId', '==', uid)
+      .orderBy('createdAt', 'desc')
+      .limit(limit)
+      .onSnapshot(
+        snap => cb(snap.docs.map(doc => ({id: doc.id, userName: 'Ben', ...doc.data()} as Report))),
+        () => {},
+      );
+  },
+
+  listenUnreadCount(uid: string, cb: (count: number) => void): () => void {
+    return firestore()
+      .collection('notifications')
+      .where('userId', '==', uid)
+      .where('read', '==', false)
+      .onSnapshot(
+        snap => cb(snap.docs.length),
+        () => {},
+      );
+  },
+
+  listenLeaderboard(cb: (users: any[]) => void): () => void {
+    return (firestore().collection('users') as any)
+      .orderBy('points', 'desc')
+      .limit(200)
+      .onSnapshot(
+        (snap: any) => cb(snap.docs.map((doc: any) => ({id: doc.id, ...doc.data()}))),
+        () => {},
+      );
+  },
+
+  async getDonationClickCount(causeId: string): Promise<number> {
+    const doc = await firestore().doc(`donations/${causeId}`).get();
+    return (doc.data()?.count as number) ?? 0;
+  },
+
+  async incrementDonationClick(causeId: string): Promise<void> {
+    await firestore()
+      .doc(`donations/${causeId}`)
+      .set({count: firestore.FieldValue.increment(1)}, {merge: true});
   },
 };

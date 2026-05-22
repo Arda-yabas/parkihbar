@@ -17,7 +17,9 @@ import {UserReportsScreen} from '../features/reports/screens/UserReportsScreen';
 import {NotificationsScreen} from '../features/notifications/screens/NotificationsScreen';
 import {OnboardingScreen} from '../features/onboarding/screens/OnboardingScreen';
 import {SettingsScreen} from '../features/settings/screens/SettingsScreen';
+import {PolicyScreen} from '../features/settings/screens/PolicyScreen';
 import {EGMWebViewScreen} from '../features/reports/screens/EGMWebViewScreen';
+import {DonationsScreen} from '../features/donations/screens/DonationsScreen';
 import {useTheme, Colors} from '../theme/ThemeContext';
 
 export type CameraStackParamList = {
@@ -30,6 +32,7 @@ export type CameraStackParamList = {
     type: string;
     location: {latitude: number; longitude: number; address: string; city?: string; district?: string};
     note?: string;
+    points?: number;
   };
 };
 
@@ -149,6 +152,8 @@ export const AppNavigator = ({onboardingDone, onOnboardingComplete}: AppNavigato
             <RootStack.Screen name="Settings" component={SettingsScreen} />
             <RootStack.Screen name="UserReports" component={UserReportsScreen} />
             <RootStack.Screen name="EGMWebView" component={EGMWebViewScreen} />
+            <RootStack.Screen name="Donations" component={DonationsScreen} />
+            <RootStack.Screen name="Policy" component={PolicyScreen} />
           </>
         )}
       </RootStack.Navigator>

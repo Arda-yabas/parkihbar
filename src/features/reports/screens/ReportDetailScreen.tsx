@@ -2,8 +2,9 @@ import React, {useState, useEffect, useRef, useMemo} from 'react';
 import {StyleSheet, View, Text, Image, TouchableOpacity, ScrollView, Dimensions, TextInput, KeyboardAvoidingView, Platform, Linking} from 'react-native';
 import {useNavigation, useRoute} from '@react-navigation/native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {useTheme, Colors} from '../../../theme/ThemeContext';
-import {FirestoreService, Comment} from '../../../services/firebase';
+import {FirestoreService, Comment, AuthService, firestore} from '../../../services/firebase';
 import {getTemplate} from '../../../constants/reportTemplates';
 import {BackButton} from '../../../components/BackButton';
 
@@ -33,11 +34,14 @@ export const ReportDetailScreen = () => {
   const insets = useSafeAreaInsets();
   const {colors} = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const report = (route.params as any)?.report;
+
+  const params = route.params as any;
+  const [report, setReport] = useState<any>(params?.report ?? null);
+  const [loadingReport, setLoadingReport] = useState(!params?.report && !!params?.reportId);
 
   const template = getTemplate(report?.type ?? 'diger');
   const shareInfo = report
-    ? {photoUrl: report.photoUrl, type: report.type, location: report.location, note: report.description}
+    ? {photoUrl: report.photoUrl, type: report.type, location: report.location, note: report.note}
     : null;
 
   const [hasSeenIt, setHasSeenIt] = useState(false);
@@ -49,15 +53,39 @@ export const ReportDetailScreen = () => {
   const scrollRef = useRef<ScrollView>(null);
 
   useEffect(() => {
-    if (!report?.id || !report?.createdAt) return;
-    if (report.status === 'verified' || report.status === 'resolved') return;
-    FirestoreService.checkAndAutoVerify(report.id, report.createdAt)
-      .then(newStatus => { if (newStatus === 'verified') setStatus('verified'); })
-      .catch(() => {});
-    FirestoreService.getComments(report.id)
-      .then(setComments)
-      .catch(() => {});
+    if (!params?.report && params?.reportId) {
+      FirestoreService.getReport(params.reportId)
+        .then(r => {
+          if (r) {
+            setReport(r);
+            setSeenCount(r.seenCount ?? 0);
+            setStatus(r.status ?? 'pending');
+          }
+        })
+        .catch(() => {})
+        .finally(() => setLoadingReport(false));
+    }
   }, []);
+
+  useEffect(() => {
+    if (!report?.id) return;
+    if (report.createdAt && report.status !== 'verified' && report.status !== 'resolved') {
+      FirestoreService.checkAndAutoVerify(report.id, report.createdAt)
+        .then(newStatus => { if (newStatus === 'verified') setStatus('verified'); })
+        .catch(() => {});
+    }
+    // Yorumları real-time dinle
+    const unsub = firestore()
+      .collection('reports')
+      .doc(report.id)
+      .collection('comments')
+      .orderBy('createdAt', 'asc')
+      .onSnapshot(
+        snap => setComments(snap.docs.map(doc => ({id: doc.id, ...doc.data()} as Comment))),
+        () => {},
+      );
+    return () => unsub();
+  }, [report?.id]);
 
   const handleSendComment = async () => {
     const text = commentText.trim();
@@ -83,13 +111,28 @@ export const ReportDetailScreen = () => {
       const {newCount, newStatus} = await FirestoreService.incrementSeenCount(report.id);
       setSeenCount(newCount);
       setStatus(newStatus);
+      // İhbar sahibine sosyal bildirim gönder (kendin değilsen)
+      const currentUid = AuthService.getCurrentUser()?.uid;
+      const reportOwnerUid = report.userId;
+      if (reportOwnerUid && reportOwnerUid !== currentUid) {
+        const viewerName = (await AsyncStorage.getItem('@username').catch(() => null)) || 'Biri';
+        FirestoreService.notifySeenIt(report.id, reportOwnerUid, viewerName).catch(() => {});
+      }
     } catch {}
   };
 
+  if (loadingReport) {
+    return (
+      <View style={[styles.container, {justifyContent: 'center', alignItems: 'center'}]}>
+        <Text style={{color: colors.text, fontSize: 16}}>Yükleniyor...</Text>
+      </View>
+    );
+  }
+
   if (!report) {
     return (
-      <View style={styles.container}>
-        <Text style={{color: colors.text}}>İhbar bulunamadı</Text>
+      <View style={[styles.container, {justifyContent: 'center', alignItems: 'center'}]}>
+        <Text style={{color: colors.text, fontSize: 16}}>İhbar bulunamadı</Text>
       </View>
     );
   }
@@ -162,11 +205,11 @@ export const ReportDetailScreen = () => {
               </TouchableOpacity>
             </View>
 
-            {report.description && (
+            {report.note && (
               <View style={styles.section}>
                 <Text style={styles.sectionIcon}>📝</Text>
                 <View style={styles.sectionContent}>
-                  <Text style={styles.descriptionText}>"{report.description}"</Text>
+                  <Text style={styles.descriptionText}>"{report.note}"</Text>
                 </View>
               </View>
             )}
