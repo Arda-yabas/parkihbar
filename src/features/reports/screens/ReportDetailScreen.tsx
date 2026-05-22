@@ -1,5 +1,5 @@
 import React, {useState, useEffect, useRef, useMemo} from 'react';
-import {StyleSheet, View, Text, Image, TouchableOpacity, ScrollView, Dimensions, TextInput, KeyboardAvoidingView, Platform, Linking, Animated} from 'react-native';
+import {StyleSheet, View, Text, Image, TouchableOpacity, ScrollView, Dimensions, TextInput, KeyboardAvoidingView, Platform, Linking, Animated, Alert} from 'react-native';
 import {useNavigation, useRoute} from '@react-navigation/native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -11,6 +11,17 @@ import {getTemplate} from '../../../constants/reportTemplates';
 import {BackButton} from '../../../components/BackButton';
 
 const {width} = Dimensions.get('window');
+
+const PROFANITY_LIST = [
+  'orospu','oç','bok','sik','göt','amk','amına','amını','sikerim','sikeyim',
+  'yarrak','yarak','piç','orospu','kahpe','ibne','götveren','ananı','ananın',
+  'oğlum','orospu','fuck','shit','bitch','asshole','bastard',
+];
+
+const containsProfanity = (text: string): boolean => {
+  const lower = text.toLowerCase().replace(/\s+/g, '');
+  return PROFANITY_LIST.some(w => lower.includes(w));
+};
 
 const getStatusColor = (status: string) => {
   switch (status) {
@@ -99,14 +110,19 @@ export const ReportDetailScreen = () => {
   const handleSendComment = async () => {
     const text = commentText.trim();
     if (!text || !report?.id || sending) return;
+    if (containsProfanity(text)) {
+      Alert.alert('Uygunsuz İçerik', 'Yorumun uygunsuz ifadeler içeriyor. Lütfen düzenle.');
+      return;
+    }
     setSending(true);
     setCommentText('');
+    const currentUid = AuthService.getCurrentUser()?.uid;
     try {
-      const newComment = await FirestoreService.addComment(report.id, text, 'Sen');
+      const userName = (await AsyncStorage.getItem('@username').catch(() => null)) || 'Anonim';
+      const newComment = await FirestoreService.addComment(report.id, text, userName, currentUid);
       setComments(prev => [...prev, newComment]);
       setTimeout(() => scrollRef.current?.scrollToEnd({animated: true}), 100);
       showToast('+2 puan · Yorumun topluma katkı sağladı 💬');
-      const currentUid = AuthService.getCurrentUser()?.uid;
       if (currentUid) {
         await FirestoreService.incrementUserCommentsCount(currentUid);
         GamificationService.addPoints(currentUid, 2).catch(() => {});
@@ -272,20 +288,45 @@ export const ReportDetailScreen = () => {
                 <Text style={styles.noComments}>Henüz yorum yok. İlk yorumu sen yaz!</Text>
               )}
 
-              {comments.map((c, i) => (
-                <View key={c.id ?? i} style={styles.commentCard}>
-                  <View style={styles.commentHeader}>
-                    <Text style={styles.commentAvatar}>👤</Text>
-                    <Text style={styles.commentUser}>{c.userName}</Text>
-                    <Text style={styles.commentTime}>
-                      {c.createdAt?.toDate
-                        ? new Date(c.createdAt.toDate()).toLocaleTimeString('tr-TR', {hour: '2-digit', minute: '2-digit'})
-                        : 'Az önce'}
-                    </Text>
-                  </View>
-                  <Text style={styles.commentText}>{c.text}</Text>
-                </View>
-              ))}
+              {comments.map((c, i) => {
+                const currentUid = AuthService.getCurrentUser()?.uid;
+                const canDelete = !!c.id && (c.userId === currentUid || report?.userId === currentUid);
+                return (
+                  <TouchableOpacity
+                    key={c.id ?? i}
+                    style={styles.commentCard}
+                    activeOpacity={canDelete ? 0.7 : 1}
+                    onLongPress={() => {
+                      if (!canDelete || !c.id) return;
+                      Alert.alert(
+                        'Yorumu Sil',
+                        'Bu yorumu silmek istediğine emin misin?',
+                        [
+                          {text: 'İptal', style: 'cancel'},
+                          {
+                            text: 'Sil', style: 'destructive',
+                            onPress: () => {
+                              FirestoreService.deleteComment(report.id, c.id!).catch(() => {});
+                              setComments(prev => prev.filter(x => x.id !== c.id));
+                            },
+                          },
+                        ],
+                      );
+                    }}>
+                    <View style={styles.commentHeader}>
+                      <Text style={styles.commentAvatar}>👤</Text>
+                      <Text style={styles.commentUser}>{c.userName}</Text>
+                      <Text style={styles.commentTime}>
+                        {c.createdAt?.toDate
+                          ? new Date(c.createdAt.toDate()).toLocaleTimeString('tr-TR', {hour: '2-digit', minute: '2-digit'})
+                          : 'Az önce'}
+                      </Text>
+                      {canDelete && <Text style={styles.commentDeleteHint}>⋯</Text>}
+                    </View>
+                    <Text style={styles.commentText}>{c.text}</Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
 
             <View style={{height: 80}} />
@@ -376,6 +417,7 @@ const makeStyles = (colors: Colors) => StyleSheet.create({
   commentUser: {fontSize: 14, fontWeight: '600', color: colors.text, flex: 1},
   commentTime: {fontSize: 12, color: colors.textSecondary},
   commentText: {fontSize: 14, color: colors.text, lineHeight: 20},
+  commentDeleteHint: {fontSize: 18, color: colors.textSecondary, marginLeft: 4},
   inputBar: {
     flexDirection: 'row', alignItems: 'flex-end',
     backgroundColor: colors.card,

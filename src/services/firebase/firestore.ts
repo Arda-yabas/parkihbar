@@ -5,6 +5,7 @@ export interface Comment {
   id?: string;
   text: string;
   userName: string;
+  userId?: string;
   createdAt: any;
 }
 
@@ -217,17 +218,28 @@ export const FirestoreService = {
     return snapshot.docs.map(doc => ({id: doc.id, ...doc.data()} as Comment));
   },
 
-  async addComment(reportId: string, text: string, userName: string): Promise<Comment> {
+  async addComment(reportId: string, text: string, userName: string, userId?: string): Promise<Comment> {
+    const doc: Record<string, any> = {
+      text,
+      userName,
+      createdAt: firestore.FieldValue.serverTimestamp(),
+    };
+    if (userId) doc.userId = userId;
     const ref = await firestore()
       .collection('reports')
       .doc(reportId)
       .collection('comments')
-      .add({
-        text,
-        userName,
-        createdAt: firestore.FieldValue.serverTimestamp(),
-      });
-    return {id: ref.id, text, userName, createdAt: new Date()};
+      .add(doc);
+    return {id: ref.id, text, userName, userId, createdAt: new Date()};
+  },
+
+  async deleteComment(reportId: string, commentId: string): Promise<void> {
+    await firestore()
+      .collection('reports')
+      .doc(reportId)
+      .collection('comments')
+      .doc(commentId)
+      .delete();
   },
 
   async getNotifications(userId: string, limitCount = 50) {
