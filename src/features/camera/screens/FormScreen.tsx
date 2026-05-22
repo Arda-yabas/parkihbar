@@ -116,12 +116,11 @@ export const FormScreen = () => {
 
   return (
     <View style={styles.container}>
-      <View style={{paddingTop: insets.top, backgroundColor: colors.card}}>
-        <FlowStepper currentStep={2} />
-      </View>
-      <View style={[styles.formHeader, {paddingTop: 4}]}>
+      <View style={[styles.topBar, {paddingTop: insets.top}]}>
         <BackButton color={colors.text} />
-        <Text style={styles.formHeaderTitle}>İhbar Detayları</Text>
+        <View style={styles.stepperWrap}>
+          <FlowStepper currentStep={2} />
+        </View>
         <TouchableOpacity style={styles.exitButton} onPress={handleExit} activeOpacity={0.7}>
           <Text style={styles.exitButtonText}>✕</Text>
         </TouchableOpacity>
@@ -212,14 +211,18 @@ export const FormScreen = () => {
           </View>
         ) : (
           <>
-            <Text style={styles.submitHint}>
-              Onaylanırsa ihbarın <Text style={styles.submitHintBold}>@parkihbar</Text> X hesabında otomatik paylaşılacak · Yüzler bulanıklaştırılır
-            </Text>
+            <View style={styles.hintCard}>
+              <Text style={styles.hintPoints}>⚡ +15 puan kazanırsın</Text>
+              <Text style={styles.hintLine}>
+                Onaylanırsa <Text style={styles.hintBold}>@parkihbar</Text> X hesabında paylaşılır
+              </Text>
+              <Text style={styles.hintLine}>🔒 Yüzler otomatik bulanıklaştırılır</Text>
+            </View>
             <TouchableOpacity
               style={[styles.submitButton, !selectedType && styles.submitButtonDisabled]}
               onPress={handleSubmit}
               disabled={!selectedType}>
-              <Text style={styles.submitButtonText}>İhbarı Kaydet  (+15 puan)</Text>
+              <Text style={styles.submitButtonText}>İhbarı Kaydet</Text>
             </TouchableOpacity>
           </>
         )}
@@ -230,14 +233,20 @@ export const FormScreen = () => {
 
 const makeStyles = (colors: Colors) => StyleSheet.create({
   container: {flex: 1, backgroundColor: colors.background},
-  formHeader: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 8, paddingBottom: 8, backgroundColor: colors.card,
+  topBar: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: colors.card, paddingHorizontal: 4, paddingBottom: 4,
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border,
   },
-  formHeaderTitle: {fontSize: 17, fontWeight: '600', color: colors.text},
-  exitButton: {width: 40, height: 40, borderRadius: 20, backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center'},
-  exitButtonText: {fontSize: 16, color: colors.textSecondary, fontWeight: '600'},
+  stepperWrap: {flex: 1},
+  exitButton: {
+    width: 38, height: 38, borderRadius: 19,
+    backgroundColor: colors.background,
+    justifyContent: 'center', alignItems: 'center',
+    marginRight: 6,
+    borderWidth: 1, borderColor: colors.border,
+  },
+  exitButtonText: {fontSize: 17, color: colors.text, fontWeight: '500'},
   scrollView: {flex: 1},
   scrollContent: {paddingBottom: 20},
   photoStrip: {flexGrow: 0, backgroundColor: colors.card},
@@ -288,9 +297,14 @@ const makeStyles = (colors: Colors) => StyleSheet.create({
   },
   submitButton: {backgroundColor: colors.primary, borderRadius: 12, paddingVertical: 16, alignItems: 'center'},
   submitButtonDisabled: {backgroundColor: colors.border},
-  submitButtonText: {color: colors.background, fontSize: 18, fontWeight: '600'},
-  submitHint: {fontSize: 12, color: colors.textSecondary, textAlign: 'center', marginBottom: 10, lineHeight: 17},
-  submitHintBold: {fontWeight: '700', color: colors.text},
+  submitButtonText: {color: colors.background, fontSize: 17, fontWeight: '700'},
+  hintCard: {
+    backgroundColor: colors.card, borderRadius: 12, padding: 14, marginBottom: 12,
+    borderLeftWidth: 3, borderLeftColor: colors.primary, gap: 4,
+  },
+  hintPoints: {fontSize: 14, fontWeight: '700', color: colors.primary},
+  hintLine: {fontSize: 12, color: colors.textSecondary, lineHeight: 17},
+  hintBold: {fontWeight: '700', color: colors.text},
   progressContainer: {backgroundColor: colors.card, borderRadius: 12, padding: 20, alignItems: 'center'},
   progressStep: {fontSize: 15, fontWeight: '600', color: colors.text, marginBottom: 12},
   progressTrack: {
