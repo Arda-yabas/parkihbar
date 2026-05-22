@@ -56,6 +56,30 @@ export const REPORT_TEMPLATES: Record<string, ReportTemplate> = {
     hashtags: '#ParkYasağı #YanlışPark',
     egmCategory: 'Trafik İhlali - Park Yasağı',
   },
+  cift_sira: {
+    name: 'Çift Sıra Park',
+    emoji: '🚗',
+    title: 'ÇİFT SIRA PARK',
+    description: 'Çift sıra park eden araç trafiği engelliyor ve diğer araçların geçişini zorlaştırıyor.',
+    hashtags: '#ÇiftSıraPark #TrafikEngeli #YanlışPark',
+    egmCategory: 'Trafik İhlali - Çift Sıra Park',
+  },
+  kapi_onu: {
+    name: 'Kapı/Çıkış Önü',
+    emoji: '🏠',
+    title: 'KAPI VEYA ÇIKIŞ ÖNÜ',
+    description: 'Bina girişi, garaj veya çıkış kapısı önüne park edilmiş araç.',
+    hashtags: '#KapıÖnüPark #GarajEngellemesi #YanlışPark',
+    egmCategory: 'Trafik İhlali - Kapı/Çıkış Önü',
+  },
+  bisiklet_yolu: {
+    name: 'Bisiklet Yolu',
+    emoji: '🚴',
+    title: 'BİSİKLET YOLU İŞGALİ',
+    description: 'Bisiklet yoluna park eden araç bisikletlilerin güvenliğini tehlikeye atıyor.',
+    hashtags: '#BisikletYolu #BisikletGüvenliği #YanlışPark',
+    egmCategory: 'Trafik İhlali - Bisiklet Yolu',
+  },
   diger: {
     name: 'Diğer',
     emoji: '📝',
@@ -78,11 +102,14 @@ export const getTemplate = (type: string): ReportTemplate =>
   REPORT_TEMPLATES[type] ?? REPORT_TEMPLATES[LEGACY_MAP[type]] ?? REPORT_TEMPLATES.diger;
 
 export const CATEGORY_OPTIONS = [
-  {value: 'kaldırım',      label: 'Kaldırıma Park',     icon: '🚶'},
-  {value: 'yaya_gecidi',   label: 'Yaya Geçidine Park',  icon: '🚸'},
-  {value: 'engelli',       label: 'Engelli Yerine Park',  icon: '♿'},
+  {value: 'kaldırım',       label: 'Kaldırıma Park',     icon: '🚶'},
+  {value: 'yaya_gecidi',    label: 'Yaya Geçidine Park', icon: '🚸'},
+  {value: 'engelli',        label: 'Engelli Yerine Park', icon: '♿'},
   {value: 'yangin_muslugu', label: 'Yangın Musluğu Önü', icon: '🚒'},
-  {value: 'otobus_duragi', label: 'Otobüs Durağı',       icon: '🚌'},
-  {value: 'yasak_bolge',   label: 'Yasak Bölge',         icon: '🚫'},
-  {value: 'diger',         label: 'Diğer',               icon: '📝'},
+  {value: 'otobus_duragi',  label: 'Otobüs Durağı',      icon: '🚌'},
+  {value: 'yasak_bolge',    label: 'Yasak Bölge',        icon: '🚫'},
+  {value: 'cift_sira',      label: 'Çift Sıra Park',     icon: '🚗'},
+  {value: 'kapi_onu',       label: 'Kapı/Çıkış Önü',    icon: '🏠'},
+  {value: 'bisiklet_yolu',  label: 'Bisiklet Yolu',      icon: '🚴'},
+  {value: 'diger',          label: 'Diğer',              icon: '📝'},
 ] as const;

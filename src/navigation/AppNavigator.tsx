@@ -23,7 +23,7 @@ import {DonationsScreen} from '../features/donations/screens/DonationsScreen';
 import {useTheme, Colors} from '../theme/ThemeContext';
 
 export type CameraStackParamList = {
-  Camera: undefined;
+  Camera: {existingPhotoUris?: string[]} | undefined;
   Form: {photoUris: string[]};
   Success: {
     reportId: string;

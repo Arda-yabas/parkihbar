@@ -121,9 +121,7 @@ export const FormScreen = () => {
         <View style={styles.stepperWrap}>
           <FlowStepper currentStep={2} />
         </View>
-        <TouchableOpacity style={styles.exitButton} onPress={handleExit} activeOpacity={0.7}>
-          <Text style={styles.exitButtonText}>✕</Text>
-        </TouchableOpacity>
+        <View style={styles.exitPlaceholder} />
       </View>
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
         <ScrollView
@@ -134,10 +132,25 @@ export const FormScreen = () => {
           {photoUris.map((uri, i) => (
             <Image key={i} source={{uri}} style={styles.photoThumb} />
           ))}
+          {photoUris.length < 3 && (
+            <TouchableOpacity
+              style={styles.photoAddBtn}
+              activeOpacity={0.7}
+              onPress={() => (navigation as any).navigate('Camera', {existingPhotoUris: photoUris})}>
+              <Text style={styles.photoAddIcon}>＋</Text>
+              <Text style={styles.photoAddLabel}>Ekle</Text>
+            </TouchableOpacity>
+          )}
         </ScrollView>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>İhlal Tipi</Text>
+          <View style={styles.sectionTitleRow}>
+            <Text style={styles.sectionTitle}>İhlal Tipi</Text>
+            <Text style={styles.sectionRequired}>* zorunlu</Text>
+          </View>
+          {!selectedType && (
+            <Text style={styles.typeHint}>👆 Devam edebilmek için bir ihlal tipi seçmelisin</Text>
+          )}
           <View style={styles.typeGrid}>
             {CATEGORY_OPTIONS.map(cat => (
               <TouchableOpacity
@@ -224,6 +237,9 @@ export const FormScreen = () => {
               disabled={!selectedType}>
               <Text style={styles.submitButtonText}>İhbarı Kaydet</Text>
             </TouchableOpacity>
+            <TouchableOpacity style={styles.homeLink} onPress={handleExit} activeOpacity={0.6}>
+              <Text style={styles.homeLinkText}>Ana Sayfaya Dön</Text>
+            </TouchableOpacity>
           </>
         )}
       </View>
@@ -239,34 +255,38 @@ const makeStyles = (colors: Colors) => StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border,
   },
   stepperWrap: {flex: 1},
-  exitButton: {
-    width: 38, height: 38, borderRadius: 19,
-    backgroundColor: colors.background,
-    justifyContent: 'center', alignItems: 'center',
-    marginRight: 6,
-    borderWidth: 1, borderColor: colors.border,
-  },
-  exitButtonText: {fontSize: 17, color: colors.text, fontWeight: '500'},
+  exitPlaceholder: {width: 40},
   scrollView: {flex: 1},
   scrollContent: {paddingBottom: 20},
   photoStrip: {flexGrow: 0, backgroundColor: colors.card},
   photoStripContent: {padding: 8, gap: 6},
-  photoThumb: {width: 110, height: 82, borderRadius: 10, backgroundColor: colors.border},
+  photoThumb: {width: 88, height: 66, borderRadius: 10, backgroundColor: colors.border},
+  photoAddBtn: {
+    width: 88, height: 66, borderRadius: 10,
+    backgroundColor: colors.background,
+    borderWidth: 2, borderColor: colors.border, borderStyle: 'dashed',
+    justifyContent: 'center', alignItems: 'center', gap: 2,
+  },
+  photoAddIcon: {fontSize: 22, color: colors.primary, fontWeight: '300'},
+  photoAddLabel: {fontSize: 10, color: colors.primary, fontWeight: '600'},
   section: {paddingHorizontal: 16, paddingTop: 10, paddingBottom: 4},
-  sectionTitle: {fontSize: 15, fontWeight: '600', color: colors.text, marginBottom: 8},
+  sectionTitleRow: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6},
+  sectionTitle: {fontSize: 15, fontWeight: '600', color: colors.text},
+  sectionRequired: {fontSize: 11, fontWeight: '600', color: colors.primary},
+  typeHint: {fontSize: 12, color: colors.textSecondary, marginBottom: 8},
   typeGrid: {flexDirection: 'row', flexWrap: 'wrap', gap: 8},
   typeButton: {
-    width: '47%',
+    width: '30%',
     backgroundColor: colors.card,
     borderRadius: 12,
-    padding: 10,
+    padding: 8,
     alignItems: 'center',
     borderWidth: 2,
     borderColor: 'transparent',
   },
   typeButtonSelected: {borderColor: colors.primary, backgroundColor: colors.primaryLight},
-  typeIcon: {fontSize: 24, marginBottom: 4},
-  typeLabel: {fontSize: 12, fontWeight: '500', color: colors.text, textAlign: 'center'},
+  typeIcon: {fontSize: 22, marginBottom: 3},
+  typeLabel: {fontSize: 11, fontWeight: '500', color: colors.text, textAlign: 'center'},
   typeLabelSelected: {color: colors.primary, fontWeight: '600'},
   noteInput: {
     backgroundColor: colors.card,
@@ -298,6 +318,8 @@ const makeStyles = (colors: Colors) => StyleSheet.create({
   submitButton: {backgroundColor: colors.primary, borderRadius: 12, paddingVertical: 16, alignItems: 'center'},
   submitButtonDisabled: {backgroundColor: colors.border},
   submitButtonText: {color: colors.background, fontSize: 17, fontWeight: '700'},
+  homeLink: {alignItems: 'center', paddingVertical: 14},
+  homeLinkText: {fontSize: 14, color: colors.textSecondary, fontWeight: '500'},
   hintCard: {
     backgroundColor: colors.card, borderRadius: 12, padding: 14, marginBottom: 12,
     borderLeftWidth: 3, borderLeftColor: colors.primary, gap: 4,

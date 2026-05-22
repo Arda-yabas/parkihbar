@@ -1,18 +1,20 @@
 import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {StyleSheet, View, TouchableOpacity, Text, Alert, ActivityIndicator, Image, ScrollView} from 'react-native';
 import {Camera, useCameraDevice, useCameraPermission} from 'react-native-vision-camera';
-import {useNavigation, useIsFocused, useFocusEffect} from '@react-navigation/native';
+import {useNavigation, useRoute, useIsFocused, useFocusEffect, RouteProp} from '@react-navigation/native';
 import {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {CameraStackParamList} from '../../../navigation/AppNavigator';
 import {lightColors as colors} from '../../../theme/ThemeContext';
 import {FlowStepper} from '../../../components/FlowStepper';
 
 type CameraScreenNavigationProp = NativeStackNavigationProp<CameraStackParamList, 'Camera'>;
+type CameraScreenRouteProp = RouteProp<CameraStackParamList, 'Camera'>;
 
 const MAX_PHOTOS = 3;
 
 export const CameraScreen = () => {
   const navigation = useNavigation<CameraScreenNavigationProp>();
+  const route = useRoute<CameraScreenRouteProp>();
   const isFocused = useIsFocused();
   const {hasPermission, requestPermission} = useCameraPermission();
   const device = useCameraDevice('back');
@@ -27,8 +29,14 @@ export const CameraScreen = () => {
 
   useFocusEffect(
     useCallback(() => {
-      setPhotos([]);
-    }, []),
+      const existing = route.params?.existingPhotoUris;
+      if (existing?.length) {
+        setPhotos(existing);
+        navigation.setParams({existingPhotoUris: undefined});
+      } else {
+        setPhotos([]);
+      }
+    }, [route.params?.existingPhotoUris]),
   );
 
   const takePhoto = async () => {
