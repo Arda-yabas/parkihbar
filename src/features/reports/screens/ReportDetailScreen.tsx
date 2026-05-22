@@ -69,6 +69,9 @@ export const ReportDetailScreen = () => {
 
   useEffect(() => {
     if (!report?.id) return;
+    AsyncStorage.getItem(`@seen_report_${report.id}`)
+      .then(val => { if (val) setHasSeenIt(true); })
+      .catch(() => {});
     if (report.createdAt && report.status !== 'verified' && report.status !== 'resolved') {
       FirestoreService.checkAndAutoVerify(report.id, report.createdAt)
         .then(newStatus => { if (newStatus === 'verified') setStatus('verified'); })
@@ -106,6 +109,7 @@ export const ReportDetailScreen = () => {
   const handleSeenIt = async () => {
     if (hasSeenIt || !report?.id) return;
     setHasSeenIt(true);
+    AsyncStorage.setItem(`@seen_report_${report.id}`, 'true').catch(() => {});
     setSeenCount(c => c + 1);
     try {
       const {newCount, newStatus} = await FirestoreService.incrementSeenCount(report.id);

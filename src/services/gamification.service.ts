@@ -28,7 +28,8 @@ const BADGES: Badge[] = [
   {id: 'fiery_mission', name: 'Ateşli Görev',  icon: '🔥', description: '50 ihbar oluşturdunuz',          requirement: 50,  type: 'reports'},
   {id: 'hundred',       name: 'Yüz İhbar',     icon: '💯', description: '100 ihbar oluşturdunuz',         requirement: 100, type: 'reports'},
   {id: 'correct_eye',   name: 'Doğru Göz',     icon: '✅', description: '10 onaylı ihbar oluşturdunuz',   requirement: 10,  type: 'verified'},
-  {id: 'eagle_eye',     name: 'Kartal Göz',    icon: '👁️', description: '%90 doğruluk oranına ulaştınız', requirement: 90,  type: 'accuracy'},
+  {id: 'eagle_eye',     name: 'Kartal Göz',    icon: '👁️', description: '%70 doğruluk oranına ulaştınız', requirement: 70,  type: 'accuracy'},
+  {id: 'weekly_streak', name: 'Haftalık Seri', icon: '📅', description: '7 hafta art arda ihbar gönderdiniz', requirement: 7, type: 'streak'},
 ];
 
 const sameDay = (a: Date, b: Date) =>

@@ -52,14 +52,14 @@ interface Badge {
 }
 
 const BADGES: Badge[] = [
-  {id: 'first_step', name: 'İlk Adım', icon: '🎯', type: 'reports', requirement: 1},
-  {id: 'sharp_eye', name: 'Keskin Göz', icon: '📸', type: 'reports', requirement: 10},
-  {id: 'fiery_mission', name: 'Ateşli Görev', icon: '🔥', type: 'reports', requirement: 50},
-  {id: 'hundred', name: 'Yüzlük', icon: '💯', type: 'reports', requirement: 100},
-  {id: 'weekly_streak', name: 'Haftalık Seri', icon: '📅', type: 'streak', requirement: 7},
-  {id: 'correct_eye', name: 'Doğru Göz', icon: '✅', type: 'verified', requirement: 10},
-  {id: 'lightning', name: 'Şimşek', icon: '⚡', type: 'reports', requirement: 5},
-  {id: 'eagle_eye', name: 'Kartal Göz', icon: '👁️', type: 'accuracy', requirement: 90},
+  {id: 'first_step',    name: 'İlk Adım',      icon: '🎯', type: 'reports',  requirement: 1},
+  {id: 'lightning',     name: 'Şimşek',         icon: '⚡', type: 'reports',  requirement: 5},
+  {id: 'sharp_eye',     name: 'Keskin Göz',     icon: '📸', type: 'reports',  requirement: 10},
+  {id: 'fiery_mission', name: 'Ateşli Görev',   icon: '🔥', type: 'reports',  requirement: 50},
+  {id: 'hundred',       name: 'Yüz İhbar',      icon: '💯', type: 'reports',  requirement: 100},
+  {id: 'correct_eye',   name: 'Doğru Göz',      icon: '✅', type: 'verified', requirement: 10},
+  {id: 'eagle_eye',     name: 'Kartal Göz',     icon: '👁️', type: 'accuracy', requirement: 70},
+  {id: 'weekly_streak', name: 'Haftalık Seri',  icon: '📅', type: 'streak',   requirement: 7},
 ];
 
 const BadgeCard = ({badge, earned, colors, styles}: {badge: Badge; earned: boolean; colors: Colors; styles: any}) => (

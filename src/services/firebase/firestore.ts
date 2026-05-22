@@ -132,6 +132,27 @@ export const FirestoreService = {
     return Math.min(count, 3);
   },
 
+  async getThisWeekReportCount(userId: string): Promise<number> {
+    const weekStart = new Date();
+    weekStart.setHours(0, 0, 0, 0);
+    // Pazartesi başlangıç
+    const day = weekStart.getDay();
+    weekStart.setDate(weekStart.getDate() - (day === 0 ? 6 : day - 1));
+    const snapshot = await firestore()
+      .collection('reports')
+      .where('userId', '==', userId)
+      .orderBy('createdAt', 'desc')
+      .limit(20)
+      .get();
+    const count = snapshot.docs.filter(doc => {
+      const ts = doc.data().createdAt;
+      if (!ts) return false;
+      const ms = ts.toMillis ? ts.toMillis() : Number(ts);
+      return ms >= weekStart.getTime();
+    }).length;
+    return Math.min(count, 3);
+  },
+
   async getReport(reportId: string): Promise<Report | null> {
     const doc = await firestore().collection('reports').doc(reportId).get();
     if (!doc.exists) return null;

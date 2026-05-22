@@ -74,14 +74,18 @@ export const DashboardScreen = () => {
           if (data) {
             setUserData({level: data.level || 1, points: data.points || 0, totalReports: data.totalReports || 0});
           }
-          // Günlük görev — kullanıcı verisi değişince bugünkü sayıyı güncelle
-          FirestoreService.getTodayReportCount(user.uid).then(count => {
+          // Haftalık görev — kullanıcı verisi değişince bu haftaki sayıyı güncelle
+          FirestoreService.getThisWeekReportCount(user.uid).then(count => {
             // 3'e ulaştıysa ve daha önce ödül verilmediyse +50 XP ver
             if (count >= 3 && prevDailyProgress.current < 3) {
-              const bonusKey = `@daily_bonus_${new Date().toDateString()}`;
-              AsyncStorage.getItem(bonusKey).then(given => {
+              const monday = new Date();
+              monday.setHours(0, 0, 0, 0);
+              const day = monday.getDay();
+              monday.setDate(monday.getDate() - (day === 0 ? 6 : day - 1));
+              const weekKey = `@weekly_bonus_${monday.toDateString()}`;
+              AsyncStorage.getItem(weekKey).then(given => {
                 if (!given) {
-                  AsyncStorage.setItem(bonusKey, 'true').catch(() => {});
+                  AsyncStorage.setItem(weekKey, 'true').catch(() => {});
                   GamificationService.addPoints(user.uid, 50).catch(() => {});
                 }
               }).catch(() => {});
@@ -228,8 +232,8 @@ export const DashboardScreen = () => {
           <View style={styles.missionCard}>
             <View style={styles.missionHeader}>
               <View>
-                <Text style={styles.missionLabel}>GÜNLÜK GÖREV</Text>
-                <Text style={styles.missionTitle}>3 ihbar tamamla 🎯</Text>
+                <Text style={styles.missionLabel}>HAFTALIK GÖREV</Text>
+                <Text style={styles.missionTitle}>Bu hafta 3 ihbar tamamla 🎯</Text>
               </View>
               <View style={styles.missionBadge}>
                 <Text style={styles.missionBadgeText}>
@@ -251,8 +255,8 @@ export const DashboardScreen = () => {
             </View>
             <Text style={styles.missionReward}>
               {dailyProgress >= 3
-                ? '🎉 Tamamlandı! +50 XP ve +1 Etki Puanı kazandın 💚'
-                : `${3 - dailyProgress} ihbar daha → +50 XP ve +1 Etki Puanı`}
+                ? '🎉 Bu hafta tamamlandı! +50 XP kazandın 💚'
+                : `${3 - dailyProgress} ihbar daha → +50 XP`}
             </Text>
           </View>
 

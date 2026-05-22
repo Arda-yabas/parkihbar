@@ -35,6 +35,11 @@ export const FormScreen = () => {
       .catch(() => {});
   }, []);
 
+  const handleExit = () => {
+    navigation.reset({index: 0, routes: [{name: 'Camera'}]});
+    (navigation as any).getParent()?.navigate('Dashboard');
+  };
+
   const handleSubmit = async () => {
     if (!selectedType) {
       Alert.alert('Eksik Bilgi', 'Lütfen ihlal tipini seçin');
@@ -117,7 +122,9 @@ export const FormScreen = () => {
       <View style={[styles.formHeader, {paddingTop: 4}]}>
         <BackButton color={colors.text} />
         <Text style={styles.formHeaderTitle}>İhbar Detayları</Text>
-        <View style={{width: 40}} />
+        <TouchableOpacity style={styles.exitButton} onPress={handleExit} activeOpacity={0.7}>
+          <Text style={styles.exitButtonText}>✕</Text>
+        </TouchableOpacity>
       </View>
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
         <ScrollView
@@ -229,6 +236,8 @@ const makeStyles = (colors: Colors) => StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border,
   },
   formHeaderTitle: {fontSize: 17, fontWeight: '600', color: colors.text},
+  exitButton: {width: 40, height: 40, borderRadius: 20, backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center'},
+  exitButtonText: {fontSize: 16, color: colors.textSecondary, fontWeight: '600'},
   scrollView: {flex: 1},
   scrollContent: {paddingBottom: 20},
   photoStrip: {flexGrow: 0, backgroundColor: colors.card},
