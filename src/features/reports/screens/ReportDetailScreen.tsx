@@ -195,8 +195,13 @@ export const ReportDetailScreen = () => {
 
   if (!report) {
     return (
-      <View style={[styles.container, {justifyContent: 'center', alignItems: 'center'}]}>
-        <Text style={{color: colors.text, fontSize: 16}}>İhbar bulunamadı</Text>
+      <View style={styles.container}>
+        <View style={[styles.header, {paddingTop: insets.top + 8}]}>
+          <BackButton />
+        </View>
+        <View style={{flex: 1, justifyContent: 'center', alignItems: 'center'}}>
+          <Text style={{color: colors.text, fontSize: 16}}>İhbar bulunamadı</Text>
+        </View>
       </View>
     );
   }

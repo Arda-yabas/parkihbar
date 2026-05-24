@@ -23,7 +23,6 @@ export const FCMService = {
 
     const token = await messaging().getToken().catch(() => null);
     if (!token) return;
-    console.log('FCM token:', token);
 
     const saveToken = async (t: string) => {
       await firestore().doc(MODERATOR_DOC).set({fcmToken: t}, {merge: true}).catch(() => {});

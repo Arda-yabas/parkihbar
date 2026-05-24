@@ -18,6 +18,17 @@ service cloud.firestore {
       allow read: if true;
       allow create: if request.auth != null;
       allow update, delete: if false; // sadece Cloud Function günceller
+
+      // Yorumlar — herkes okuyabilir, auth olan yazar, yazar veya ihbar sahibi silebilir
+      match /comments/{commentId} {
+        allow read: if true;
+        allow create: if request.auth != null;
+        allow delete: if request.auth != null && (
+          resource.data.userId == request.auth.uid ||
+          get(/databases/$(database)/documents/reports/$(reportId)).data.userId == request.auth.uid
+        );
+        allow update: if false;
+      }
     }
 
     // Settings — moderatör FCM token kaydı için auth olan yazabilir

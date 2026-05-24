@@ -18,7 +18,7 @@ const AppInner = () => {
         FCMService.init(),
         new Promise<void>(r => setTimeout(r, 4000)),
       ]).catch(() => {}),
-      AsyncStorage.getItem('@onboarding_completed'),
+      AsyncStorage.getItem('@onboarding_completed').catch(() => null),
     ]).then(([,, onboarding]) => {
       setOnboardingDone(onboarding === 'true');
       setAppReady(true);
