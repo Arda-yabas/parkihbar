@@ -121,6 +121,10 @@ export const ReportDetailScreen = () => {
       const userName = (await AsyncStorage.getItem('@username').catch(() => null)) || 'Anonim';
       const newComment = await FirestoreService.addComment(report.id, text, userName, currentUid);
       setComments(prev => [...prev, newComment]);
+      const reportOwnerUid = report.userId;
+      if (reportOwnerUid && reportOwnerUid !== currentUid) {
+        FirestoreService.notifyNewComment(report.id, reportOwnerUid, userName, text).catch(() => {});
+      }
       setTimeout(() => scrollRef.current?.scrollToEnd({animated: true}), 100);
       showToast('+2 puan · Yorumun topluma katkı sağladı 💬');
       if (currentUid) {
@@ -130,6 +134,7 @@ export const ReportDetailScreen = () => {
           if (badges.length > 0) {
             setBadgePopupData(badges[0]);
             setTimeout(() => setShowBadgePopup(true), 2200);
+            badges.forEach(b => FirestoreService.notifyBadge(currentUid, b.name, b.icon).catch(() => {}));
           }
         }).catch(() => {});
       }
@@ -173,6 +178,7 @@ export const ReportDetailScreen = () => {
           if (badges.length > 0) {
             setBadgePopupData(badges[0]);
             setTimeout(() => setShowBadgePopup(true), 2200);
+            badges.forEach(b => FirestoreService.notifyBadge(currentUid, b.name, b.icon).catch(() => {}));
           }
         }).catch(() => {});
       }

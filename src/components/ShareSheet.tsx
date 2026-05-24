@@ -1,5 +1,6 @@
 import React, {useState, useMemo} from 'react';
-import {View, Text, TouchableOpacity, StyleSheet, Alert, Linking} from 'react-native';
+import {View, Text, TouchableOpacity, StyleSheet, Alert, Linking, ActivityIndicator} from 'react-native';
+import {CameraRoll} from '@react-native-camera-roll/camera-roll';
 import RNShare, {Social} from 'react-native-share';
 import FontAwesome6 from 'react-native-vector-icons/FontAwesome6';
 import Clipboard from '@react-native-clipboard/clipboard';
@@ -31,6 +32,7 @@ export const ShareSheet: React.FC<Props> = ({info}) => {
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const navigation = useNavigation();
   const [toast, setToast] = useState('');
+  const [savingPhoto, setSavingPhoto] = useState(false);
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -97,7 +99,26 @@ export const ShareSheet: React.FC<Props> = ({info}) => {
   };
 
   // ── EGM ──────────────────────────────────────────────────────────────────
-  const handleEGM = () => {
+  const handleEGM = async () => {
+    if (info.localPhotoUri) {
+      try {
+        setSavingPhoto(true);
+        await CameraRoll.save(info.localPhotoUri, {type: 'photo'});
+        showToast('📸 Fotoğraf galeriye kaydedildi');
+        await new Promise(r => setTimeout(r, 800));
+      } catch (e: any) {
+        const msg: string = e?.message ?? '';
+        if (msg.includes('permission') || msg.includes('denied') || msg.includes('access')) {
+          Alert.alert(
+            'Galeri İzni Gerekli',
+            'Fotoğrafı galeriye kaydetmek için izin gerekiyor. EGM formuna fotoğraf yükleyemeyebilirsin.',
+            [{text: 'Tamam'}],
+          );
+        }
+      } finally {
+        setSavingPhoto(false);
+      }
+    }
     (navigation as any).navigate('EGMWebView', {info});
   };
 
@@ -113,9 +134,11 @@ export const ShareSheet: React.FC<Props> = ({info}) => {
     {
       onPress: handleEGM,
       bg: '#C0392B',
-      icon: <Text style={styles.emoji}>🌐</Text>,
+      icon: savingPhoto
+        ? <ActivityIndicator color="#FFF" size="small" />
+        : <Text style={styles.emoji}>🌐</Text>,
       title: 'EGM İhbar Formu',
-      sub: 'İl · ilçe · adres otomatik doldurulur — resmi polis kaydı',
+      sub: 'Fotoğraf galeriye kaydedilir · açıklama otomatik doldurulur',
     },
     {
       onPress: handleZabita,

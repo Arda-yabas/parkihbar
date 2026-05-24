@@ -121,7 +121,7 @@ export const ProfileScreen = () => {
       setLoading(false);
     });
 
-    const unsubReports = FirestoreService.listenUserReports(user.uid, 3, reports => {
+    const unsubReports = FirestoreService.listenUserReports(user.uid, 5, reports => {
       setMyReports(reports.map(r => ({
         id: r.id ?? '',
         type: VIOLATION_NAMES[r.type] ?? r.type?.replace(/_/g, ' '),
@@ -318,7 +318,11 @@ export const ProfileScreen = () => {
           <Text style={styles.emptyText}>Henüz ihbarın yok. İlk ihbarını yap! 🎯</Text>
         ) : (
           myReports.map(r => (
-            <View key={r.id} style={styles.myReportRow}>
+            <TouchableOpacity
+              key={r.id}
+              style={styles.myReportRow}
+              activeOpacity={0.7}
+              onPress={() => (navigation as any).navigate('ReportDetail', {reportId: r.id})}>
               <Text style={styles.myReportIcon}>{r.icon}</Text>
               <View style={styles.myReportInfo}>
                 <Text style={styles.myReportType}>{r.type}</Text>
@@ -329,7 +333,8 @@ export const ProfileScreen = () => {
                   {r.status === 'verified' ? '✓ Onaylı' : '⏳ Bekliyor'}
                 </Text>
               </View>
-            </View>
+              <Text style={styles.myReportArrow}>›</Text>
+            </TouchableOpacity>
           ))
         )}
       </View>
@@ -484,6 +489,7 @@ const makeStyles = (colors: Colors) => StyleSheet.create({
   myReportBadge: {paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, backgroundColor: '#FFF3CD'},
   myReportBadgeVerified: {backgroundColor: '#D4EDDA'},
   myReportBadgeText: {fontSize: 11, fontWeight: '600', color: '#856404'},
+  myReportArrow: {fontSize: 18, color: colors.textSecondary, marginLeft: 6},
   emergencyRow: {flexDirection: 'row', gap: 10},
   emergencyButton: {
     flex: 1, backgroundColor: colors.background,

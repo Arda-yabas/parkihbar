@@ -193,11 +193,12 @@ export const FirestoreService = {
       }
       tx.update(ref, update);
     });
-    // İhbar verified'a geçtiyse sahibinin verifiedReports sayacını artır
+    // İhbar verified'a geçtiyse sahibinin verifiedReports sayacını artır + bildirim gönder
     if (newStatus === 'verified' && reportUserId) {
       firestore().collection('users').doc(reportUserId)
         .set({verifiedReports: firestore.FieldValue.increment(1)}, {merge: true})
         .catch(() => {});
+      FirestoreService.notifyVerified(reportId, reportUserId).catch(() => {});
     }
     // Her görülmede ihbar sahibinin toplam etki sayacını artır
     if (reportUserId) {
@@ -341,6 +342,52 @@ export const FirestoreService = {
       read: false,
       createdAt: firestore.FieldValue.serverTimestamp(),
       metadata: {reportId},
+    });
+  },
+
+  async notifyNewComment(reportId: string, reportUserId: string, commenterName: string, commentText: string): Promise<void> {
+    await firestore().collection('notifications').add({
+      userId: reportUserId,
+      type: 'social',
+      title: '💬 Yeni yorum',
+      message: `${commenterName}: "${commentText.length > 60 ? commentText.slice(0, 60) + '…' : commentText}"`,
+      read: false,
+      createdAt: firestore.FieldValue.serverTimestamp(),
+      metadata: {reportId},
+    });
+  },
+
+  async notifyVerified(reportId: string, reportUserId: string): Promise<void> {
+    await firestore().collection('notifications').add({
+      userId: reportUserId,
+      type: 'report',
+      title: '✅ İhbarın onaylandı!',
+      message: 'Topluluk ihbarını doğruladı. +puan kazandın 🎉',
+      read: false,
+      createdAt: firestore.FieldValue.serverTimestamp(),
+      metadata: {reportId},
+    });
+  },
+
+  async notifyBadge(userId: string, badgeName: string, badgeIcon: string): Promise<void> {
+    await firestore().collection('notifications').add({
+      userId,
+      type: 'badge',
+      title: `${badgeIcon} Yeni rozet kazandın!`,
+      message: `"${badgeName}" rozetini kazandın. Profilinden görebilirsin.`,
+      read: false,
+      createdAt: firestore.FieldValue.serverTimestamp(),
+    });
+  },
+
+  async notifyLevelUp(userId: string, newLevel: number, levelName: string): Promise<void> {
+    await firestore().collection('notifications').add({
+      userId,
+      type: 'level',
+      title: '⬆️ Seviye atladın!',
+      message: `Seviye ${newLevel} — ${levelName} oldun! 🏆`,
+      read: false,
+      createdAt: firestore.FieldValue.serverTimestamp(),
     });
   },
 

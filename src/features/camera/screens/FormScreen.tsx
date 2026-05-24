@@ -1,5 +1,6 @@
-import React, {useState, useEffect, useMemo} from 'react';
-import {StyleSheet, View, Text, TextInput, ScrollView, TouchableOpacity, Image, Alert, ActivityIndicator, Linking} from 'react-native';
+import React, {useState, useEffect, useMemo, useRef} from 'react';
+import {StyleSheet, View, Text, TextInput, ScrollView, TouchableOpacity, Image, Alert, ActivityIndicator, Linking, Modal} from 'react-native';
+import {Camera, useCameraDevice, useCameraPermission} from 'react-native-vision-camera';
 import {useNavigation, useRoute, RouteProp} from '@react-navigation/native';
 import {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
@@ -20,14 +21,24 @@ export const FormScreen = () => {
   const insets = useSafeAreaInsets();
   const {colors} = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const {photoUris} = route.params;
 
+  const [localPhotoUris, setLocalPhotoUris] = useState<string[]>(route.params.photoUris);
   const [selectedType, setSelectedType] = useState<string | null>(null);
   const [note, setNote] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadStep, setUploadStep] = useState('');
   const [locationData, setLocationData] = useState<LocationData | null>(null);
+  const [showAddCamera, setShowAddCamera] = useState(false);
+  const [isAddCapturing, setIsAddCapturing] = useState(false);
+
+  const addCameraRef = useRef<Camera>(null);
+  const scrollRef = useRef<ScrollView>(null);
+  const noteInputRef = useRef<TextInput>(null);
+  const {hasPermission, requestPermission} = useCameraPermission();
+
+  const noteRequired = selectedType === 'diger';
+  const cameraDevice = useCameraDevice('back');
 
   useEffect(() => {
     LocationService.getCurrentLocation()
@@ -35,14 +46,47 @@ export const FormScreen = () => {
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    if (selectedType === 'diger') {
+      setTimeout(() => scrollRef.current?.scrollToEnd({animated: true}), 100);
+    }
+  }, [selectedType]);
+
   const handleExit = () => {
     navigation.reset({index: 0, routes: [{name: 'Camera'}]});
     (navigation as any).getParent()?.navigate('Dashboard');
   };
 
+  const handleOpenAddCamera = async () => {
+    if (!hasPermission) {
+      await requestPermission();
+    }
+    setShowAddCamera(true);
+  };
+
+  const handleAddPhoto = async () => {
+    if (isAddCapturing || !addCameraRef.current) {return;}
+    try {
+      setIsAddCapturing(true);
+      const photo = await addCameraRef.current.takePhoto({});
+      setLocalPhotoUris(prev => [...prev, `file://${photo.path}`]);
+      setShowAddCamera(false);
+    } catch {
+      Alert.alert('Hata', 'Fotoğraf çekilemedi, tekrar dene');
+    } finally {
+      setIsAddCapturing(false);
+    }
+  };
+
   const handleSubmit = async () => {
     if (!selectedType) {
       Alert.alert('Eksik Bilgi', 'Lütfen ihlal tipini seçin');
+      return;
+    }
+    if (noteRequired && !note.trim()) {
+      Alert.alert('Not Gerekli', '"Diğer" seçildiğinde ihlali kısaca açıklamanı istiyoruz.');
+      scrollRef.current?.scrollToEnd({animated: true});
+      setTimeout(() => noteInputRef.current?.focus(), 350);
       return;
     }
     if (!locationData) {
@@ -57,17 +101,16 @@ export const FormScreen = () => {
     try {
       setIsSubmitting(true);
       setUploadProgress(0);
-      setUploadStep(`${photoUris.length} fotoğraf yükleniyor...`);
+      setUploadStep(`${localPhotoUris.length} fotoğraf yükleniyor...`);
 
-      // Upload all photos in parallel — each tracks its own progress slot
-      const progressSlots = new Array(photoUris.length).fill(0);
+      const progressSlots = new Array(localPhotoUris.length).fill(0);
       const updateOverall = () => {
-        const overall = progressSlots.reduce((a, b) => a + b, 0) / photoUris.length;
+        const overall = progressSlots.reduce((a, b) => a + b, 0) / localPhotoUris.length;
         setUploadProgress(overall);
       };
 
       const photoUrls = await Promise.all(
-        photoUris.map((uri, i) =>
+        localPhotoUris.map((uri, i) =>
           StorageService.uploadPhoto(uri, pct => {
             progressSlots[i] = pct;
             updateOverall();
@@ -100,7 +143,7 @@ export const FormScreen = () => {
       navigation.navigate('Success', {
         reportId,
         photoUrl: photoUrls[0],
-        localPhotoUri: photoUris[0],
+        localPhotoUri: localPhotoUris[0],
         type: selectedType,
         location,
         note: note || undefined,
@@ -116,6 +159,40 @@ export const FormScreen = () => {
 
   return (
     <View style={styles.container}>
+      <Modal visible={showAddCamera} animationType="slide" onRequestClose={() => setShowAddCamera(false)}>
+        <View style={styles.cameraModal}>
+          {cameraDevice ? (
+            <Camera
+              ref={addCameraRef}
+              style={StyleSheet.absoluteFill}
+              device={cameraDevice}
+              isActive={showAddCamera}
+              photo={true}
+              photoQualityBalance="speed"
+            />
+          ) : (
+            <ActivityIndicator color="#fff" size="large" />
+          )}
+          <View style={[styles.cameraModalTop, {paddingTop: insets.top + 8}]}>
+            <TouchableOpacity style={styles.cameraModalClose} onPress={() => setShowAddCamera(false)}>
+              <Text style={styles.cameraModalCloseText}>✕</Text>
+            </TouchableOpacity>
+            <Text style={styles.cameraModalTitle}>Fotoğraf Ekle</Text>
+            <View style={{width: 40}} />
+          </View>
+          <View style={styles.cameraModalBottom}>
+            <TouchableOpacity
+              style={styles.cameraCapture}
+              onPress={handleAddPhoto}
+              disabled={isAddCapturing}>
+              {isAddCapturing
+                ? <ActivityIndicator color={colors.primary} />
+                : <View style={[styles.cameraCaptureInner, {backgroundColor: colors.primary}]} />}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       <View style={[styles.topBar, {paddingTop: insets.top}]}>
         <BackButton color={colors.text} />
         <View style={styles.stepperWrap}>
@@ -123,20 +200,21 @@ export const FormScreen = () => {
         </View>
         <View style={styles.exitPlaceholder} />
       </View>
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+
+      <ScrollView ref={scrollRef} style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           style={styles.photoStrip}
           contentContainerStyle={styles.photoStripContent}>
-          {photoUris.map((uri, i) => (
+          {localPhotoUris.map((uri, i) => (
             <Image key={i} source={{uri}} style={styles.photoThumb} />
           ))}
-          {photoUris.length < 3 && (
+          {localPhotoUris.length < 3 && (
             <TouchableOpacity
               style={styles.photoAddBtn}
               activeOpacity={0.7}
-              onPress={() => (navigation as any).navigate('Camera', {existingPhotoUris: photoUris})}>
+              onPress={handleOpenAddCamera}>
               <Text style={styles.photoAddIcon}>＋</Text>
               <Text style={styles.photoAddLabel}>Ekle</Text>
             </TouchableOpacity>
@@ -145,8 +223,9 @@ export const FormScreen = () => {
 
         <View style={styles.section}>
           <View style={styles.sectionTitleRow}>
-            <Text style={styles.sectionTitle}>İhlal Tipi</Text>
-            <Text style={styles.sectionRequired}>* zorunlu</Text>
+            <Text style={styles.sectionTitle}>
+              İhlal Tipi <Text style={styles.sectionRequired}>(zorunlu)</Text>
+            </Text>
           </View>
           {!selectedType && (
             <Text style={styles.typeHint}>👆 Devam edebilmek için bir ihlal tipi seçmelisin</Text>
@@ -166,7 +245,7 @@ export const FormScreen = () => {
           </View>
         </View>
 
-        <View style={styles.section}>
+        <View style={styles.sectionCompact}>
           <Text style={styles.sectionTitle}>Konum</Text>
           <TouchableOpacity
             style={styles.locationCard}
@@ -198,11 +277,16 @@ export const FormScreen = () => {
           </TouchableOpacity>
         </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Not (Opsiyonel)</Text>
+        <View style={styles.sectionCompact}>
+          <Text style={styles.sectionTitle}>
+            Not{noteRequired
+              ? <Text style={styles.sectionRequired}> (zorunlu)</Text>
+              : <Text style={styles.sectionOptional}> (opsiyonel)</Text>}
+          </Text>
           <TextInput
-            style={styles.noteInput}
-            placeholder="Ek açıklama ekle..."
+            ref={noteInputRef}
+            style={[styles.noteInput, noteRequired && !note.trim() && styles.noteInputRequired]}
+            placeholder={noteRequired ? 'İhlali kısaca açıkla...' : 'Ek açıklama ekle...'}
             placeholderTextColor={colors.textSecondary}
             value={note}
             onChangeText={setNote}
@@ -227,7 +311,7 @@ export const FormScreen = () => {
             <View style={styles.hintCard}>
               <Text style={styles.hintPoints}>⚡ +15 puan kazanırsın</Text>
               <Text style={styles.hintLine}>
-                Onaylanırsa <Text style={styles.hintBold}>@parkihbar</Text> X hesabında paylaşılır
+                İhbarı kaydedersen ve onaylanırsa <Text style={styles.hintBold}>@parkihbar</Text> X hesabında paylaşılır
               </Text>
               <Text style={styles.hintLine}>🔒 Yüzler otomatik bulanıklaştırılır</Text>
             </View>
@@ -238,7 +322,7 @@ export const FormScreen = () => {
               <Text style={styles.submitButtonText}>İhbarı Kaydet</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.homeLink} onPress={handleExit} activeOpacity={0.6}>
-              <Text style={styles.homeLinkText}>Ana Sayfaya Dön</Text>
+              <Text style={styles.homeLinkText}>🏠  Ana Sayfaya Dön</Text>
             </TouchableOpacity>
           </>
         )}
@@ -270,9 +354,11 @@ const makeStyles = (colors: Colors) => StyleSheet.create({
   photoAddIcon: {fontSize: 22, color: colors.primary, fontWeight: '300'},
   photoAddLabel: {fontSize: 10, color: colors.primary, fontWeight: '600'},
   section: {paddingHorizontal: 16, paddingTop: 10, paddingBottom: 4},
-  sectionTitleRow: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6},
+  sectionCompact: {paddingHorizontal: 16, paddingTop: 6, paddingBottom: 4},
+  sectionTitleRow: {marginBottom: 6},
   sectionTitle: {fontSize: 15, fontWeight: '600', color: colors.text},
-  sectionRequired: {fontSize: 11, fontWeight: '600', color: colors.primary},
+  sectionRequired: {fontSize: 13, fontWeight: '600', color: colors.primary},
+  sectionOptional: {fontSize: 13, fontWeight: '400', color: colors.textSecondary},
   typeHint: {fontSize: 12, color: colors.textSecondary, marginBottom: 8},
   typeGrid: {flexDirection: 'row', flexWrap: 'wrap', gap: 8},
   typeButton: {
@@ -294,7 +380,12 @@ const makeStyles = (colors: Colors) => StyleSheet.create({
     padding: 12,
     fontSize: 15,
     color: colors.text,
-    minHeight: 72,
+    minHeight: 80,
+    borderWidth: 1.5,
+    borderColor: 'transparent',
+  },
+  noteInputRequired: {
+    borderColor: colors.primary,
   },
   locationCard: {
     flexDirection: 'row',
@@ -315,11 +406,10 @@ const makeStyles = (colors: Colors) => StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },
-  submitButton: {backgroundColor: colors.primary, borderRadius: 12, paddingVertical: 16, alignItems: 'center'},
+  submitButton: {backgroundColor: colors.primary, borderRadius: 12, paddingVertical: 14, alignItems: 'center', gap: 2},
   submitButtonDisabled: {backgroundColor: colors.border},
   submitButtonText: {color: colors.background, fontSize: 17, fontWeight: '700'},
-  homeLink: {alignItems: 'center', paddingVertical: 14},
-  homeLinkText: {fontSize: 14, color: colors.textSecondary, fontWeight: '500'},
+  submitButtonSub: {color: 'rgba(255,255,255,0.72)', fontSize: 11},
   hintCard: {
     backgroundColor: colors.card, borderRadius: 12, padding: 14, marginBottom: 12,
     borderLeftWidth: 3, borderLeftColor: colors.primary, gap: 4,
@@ -327,6 +417,12 @@ const makeStyles = (colors: Colors) => StyleSheet.create({
   hintPoints: {fontSize: 14, fontWeight: '700', color: colors.primary},
   hintLine: {fontSize: 12, color: colors.textSecondary, lineHeight: 17},
   hintBold: {fontWeight: '700', color: colors.text},
+  homeLink: {
+    borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginTop: 10,
+    borderWidth: 1.5, borderColor: colors.primary + '55',
+    backgroundColor: colors.primaryLight,
+  },
+  homeLinkText: {fontSize: 15, fontWeight: '600', color: colors.primary},
   progressContainer: {backgroundColor: colors.card, borderRadius: 12, padding: 20, alignItems: 'center'},
   progressStep: {fontSize: 15, fontWeight: '600', color: colors.text, marginBottom: 12},
   progressTrack: {
@@ -339,4 +435,25 @@ const makeStyles = (colors: Colors) => StyleSheet.create({
   },
   progressFill: {height: '100%', backgroundColor: colors.primary, borderRadius: 5},
   progressPct: {fontSize: 13, color: colors.textSecondary, fontWeight: '500'},
+  cameraModal: {flex: 1, backgroundColor: '#000', justifyContent: 'space-between'},
+  cameraModalTop: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 20, paddingBottom: 12,
+  },
+  cameraModalClose: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center',
+  },
+  cameraModalCloseText: {color: '#FFF', fontSize: 18, fontWeight: 'bold'},
+  cameraModalTitle: {color: '#FFF', fontSize: 16, fontWeight: '600'},
+  cameraModalBottom: {
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    paddingVertical: 32, alignItems: 'center',
+  },
+  cameraCapture: {
+    width: 74, height: 74, borderRadius: 37,
+    backgroundColor: '#FFF', justifyContent: 'center', alignItems: 'center',
+    borderWidth: 4, borderColor: 'rgba(255,255,255,0.5)',
+  },
+  cameraCaptureInner: {width: 58, height: 58, borderRadius: 29},
 });

@@ -2,7 +2,7 @@ import React, {useState, useEffect, useRef, useMemo} from 'react';
 import {StyleSheet, View, Text, TouchableOpacity, Animated, ScrollView} from 'react-native';
 import {useNavigation, useRoute, RouteProp} from '@react-navigation/native';
 import {useTheme, Colors} from '../../../theme/ThemeContext';
-import {AuthService} from '../../../services/firebase';
+import {AuthService, FirestoreService} from '../../../services/firebase';
 import {GamificationService} from '../../../services/gamification.service';
 import {LevelUpPopup} from '../../gamification/components/LevelUpPopup';
 import {BadgePopup} from '../../gamification/components/BadgePopup';
@@ -50,6 +50,7 @@ export const SuccessScreen = () => {
         const newLevelInfo = GamificationService.getLevelInfo(result.newLevel);
         setLevelUpData({oldLevel: result.oldLevel, newLevel: result.newLevel, oldLevelInfo, newLevelInfo});
         setTimeout(() => setShowLevelUp(true), 1000);
+        FirestoreService.notifyLevelUp(user.uid, result.newLevel, newLevelInfo.name).catch(() => {});
       }
 
       const newBadges = await GamificationService.checkNewBadges(user.uid);
@@ -57,6 +58,9 @@ export const SuccessScreen = () => {
       if (newBadges.length > 0) {
         setBadgeData(newBadges[0]);
         setTimeout(() => setShowBadge(true), showLevelUp ? 2000 : 1000);
+        newBadges.forEach(b =>
+          FirestoreService.notifyBadge(user.uid, b.name, b.icon).catch(() => {}),
+        );
       }
     } catch (e) {
       console.warn('Gamification hatası:', e);

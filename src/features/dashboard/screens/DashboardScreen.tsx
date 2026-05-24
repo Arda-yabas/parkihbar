@@ -262,17 +262,17 @@ export const DashboardScreen = () => {
 
           {/* Donation Section */}
           <View style={styles.donationSection}>
+            <View style={styles.donationMission}>
+              <Text style={styles.donationMissionTitle}>Tek başına küçük, birlikte güçlü.</Text>
+              <Text style={styles.donationMissionText}>
+                parkihbar bir topluluk hareketidir. Şehri birlikte dönüştürüyoruz — ihbarla, sesimizle ve destekle. Aşağıdaki sivil toplum kuruluşları da bu değişimin parçası.
+              </Text>
+            </View>
             <View style={styles.donationSectionHeader}>
               <Text style={styles.sectionTitle}>💚 Destekle</Text>
               <TouchableOpacity onPress={() => navigation.navigate('Donations' as never)}>
                 <Text style={styles.seeMore}>Tümü →</Text>
               </TouchableOpacity>
-            </View>
-            <View style={styles.donationNotice}>
-              <Text style={styles.donationNoticeIcon}>💡</Text>
-              <Text style={styles.donationNoticeText}>
-                Bağış butonları sizi resmi kuruluşların sayfasına yönlendirir. Hiçbir ödeme bizim üzerimizden geçmez.
-              </Text>
             </View>
             <FlatList
               ref={donationListRef}
@@ -434,15 +434,14 @@ const makeStyles = (colors: Colors) => StyleSheet.create({
   missionDotNum: {fontSize: 12, color: colors.textSecondary, fontWeight: '700'},
   missionReward: {fontSize: 11, color: colors.textSecondary, fontWeight: '500'},
   donationSection: {marginBottom: 14},
-  donationSectionHeader: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6},
-  donationNotice: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: 6,
-    backgroundColor: colors.accentLight,
-    borderRadius: 10, padding: 9, marginBottom: 10,
-    borderLeftWidth: 3, borderLeftColor: colors.accent,
+  donationSectionHeader: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8},
+  donationMission: {
+    backgroundColor: colors.card,
+    borderRadius: 14, padding: 14, marginBottom: 12,
+    borderLeftWidth: 3, borderLeftColor: colors.primary,
   },
-  donationNoticeIcon: {fontSize: 12, marginTop: 1},
-  donationNoticeText: {flex: 1, fontSize: 11, color: colors.accent, fontWeight: '500', lineHeight: 15},
+  donationMissionTitle: {fontSize: 14, fontWeight: '700', color: colors.text, marginBottom: 6},
+  donationMissionText: {fontSize: 12, color: colors.textSecondary, lineHeight: 18},
   donationList: {gap: CARD_GAP, paddingRight: 4},
   donationCard: {
     width: CARD_WIDTH,

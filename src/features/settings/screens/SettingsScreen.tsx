@@ -13,6 +13,7 @@ import {
   TextInput,
 } from 'react-native';
 import {useNavigation, useFocusEffect} from '@react-navigation/native';
+import FontAwesome6 from 'react-native-vector-icons/FontAwesome6';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {BackButton} from '../../../components/BackButton';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -337,8 +338,12 @@ export const SettingsScreen = () => {
         <View style={styles.card}>
           <Row icon="🏷️" label="Versiyon" value={VERSION} styles={styles} />
           <Divider styles={styles} />
-          <TouchableRow icon="🐦" label="Twitter / X" desc="@parkihbar"
-            onPress={() => Linking.openURL('https://x.com/parkihbar')} styles={styles} />
+          <TouchableRow
+            icon={<FontAwesome6 name="x-twitter" brand size={18} color="#000" />}
+            label="X (Twitter)"
+            desc="@parkihbar"
+            onPress={() => Linking.openURL('https://x.com/parkihbar')}
+            styles={styles} />
           <Divider styles={styles} />
           <TouchableRow icon="📧" label="İletişim" desc="info@parkihbar.com"
             onPress={() => Linking.openURL('mailto:info@parkihbar.com')} styles={styles} />
@@ -392,10 +397,12 @@ const Row = ({icon, label, value, onPress, styles}: {
 );
 
 const TouchableRow = ({icon, label, desc, onPress, styles}: {
-  icon: string; label: string; desc?: string; onPress: () => void; styles: any;
+  icon: string | React.ReactNode; label: string; desc?: string; onPress: () => void; styles: any;
 }) => (
   <TouchableOpacity style={styles.row} onPress={onPress} activeOpacity={0.7}>
-    <Text style={styles.rowIcon}>{icon}</Text>
+    <View style={styles.rowIconWrap}>
+      {typeof icon === 'string' ? <Text style={styles.rowIcon}>{icon}</Text> : icon}
+    </View>
     <View style={styles.rowInfo}>
       <Text style={styles.rowLabel}>{label}</Text>
       {desc && <Text style={styles.rowDesc}>{desc}</Text>}
@@ -454,6 +461,7 @@ const makeStyles = (colors: Colors) =>
       paddingHorizontal: 16, paddingVertical: 14, minHeight: 54,
     },
     rowIcon: {fontSize: 22, width: 36},
+    rowIconWrap: {width: 36, alignItems: 'flex-start', justifyContent: 'center'},
     rowInfo: {flex: 1, marginRight: 8},
     rowLabel: {fontSize: 15, fontWeight: '500', color: colors.text},
     rowDesc: {fontSize: 12, color: colors.textSecondary, marginTop: 2},

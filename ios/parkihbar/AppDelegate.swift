@@ -53,7 +53,7 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
     _ application: UIApplication,
     didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
   ) {
-    // Firebase SDK bu token'ı otomatik kullanır
+    // swizzling enabled — Firebase otomatik alır
   }
 
   func application(

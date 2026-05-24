@@ -15,17 +15,14 @@ export const FCMService = {
       if (result !== PermissionsAndroid.RESULTS.GRANTED) return;
     }
 
-    if (Platform.OS === 'ios') {
-      await messaging().requestPermission().catch(() => {});
-    } else {
-      const authStatus = await messaging().requestPermission();
-      const enabled =
-        authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
-        authStatus === messaging.AuthorizationStatus.PROVISIONAL;
-      if (!enabled) return;
-    }
+    const authStatus = await messaging().requestPermission().catch(() => messaging.AuthorizationStatus.NOT_DETERMINED);
+    const enabled =
+      authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
+      authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+    if (!enabled) return;
 
-    const token = await messaging().getToken();
+    const token = await messaging().getToken().catch(() => null);
+    if (!token) return;
     console.log('FCM token:', token);
 
     const saveToken = async (t: string) => {
