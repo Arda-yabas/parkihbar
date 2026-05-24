@@ -66,7 +66,7 @@ export const FirestoreService = {
   async getLeaderboard(limit: number, period: 'today' | 'week' | 'month' = 'week'): Promise<Partial<Report>[]> {
     const snapshot = await (firestore().collection('users') as any)
       .orderBy('points', 'desc')
-      .limit(200)
+      .limit(500)
       .get();
 
     const all = snapshot.docs.map((doc: any) => ({id: doc.id, ...doc.data()}));
@@ -440,7 +440,7 @@ export const FirestoreService = {
   listenLeaderboard(cb: (users: any[]) => void): () => void {
     return (firestore().collection('users') as any)
       .orderBy('points', 'desc')
-      .limit(200)
+      .limit(500)
       .onSnapshot(
         (snap: any) => cb(snap.docs.map((doc: any) => ({id: doc.id, ...doc.data()}))),
         () => {},
